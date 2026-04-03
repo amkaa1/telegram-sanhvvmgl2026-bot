@@ -1,24 +1,22 @@
 import logging
 import sys
+import io
 
 
-def setup_logger() -> logging.Logger:
-    logger = logging.getLogger("telegram_community_bot")
-    logger.setLevel(logging.INFO)
+def setup_logging(level: str = "INFO") -> None:
+    stream = sys.stdout
+    if hasattr(stream, "reconfigure"):
+        stream.reconfigure(encoding="utf-8", errors="replace")
+    elif hasattr(stream, "buffer"):
+        stream = io.TextIOWrapper(stream.buffer, encoding="utf-8", errors="replace")
 
-    if logger.handlers:
-        return logger
-
-    handler = logging.StreamHandler(sys.stdout)
-    formatter = logging.Formatter(
-        "[%(asctime)s] [%(levelname)s] %(name)s - %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
+    logging.basicConfig(
+        level=level.upper(),
+        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+        handlers=[logging.StreamHandler(stream)],
+        force=True,
     )
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
-
-    return logger
 
 
-logger = setup_logger()
+logger = logging.getLogger("telegram_growth_bot")
 

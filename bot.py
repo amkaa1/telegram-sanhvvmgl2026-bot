@@ -1,62 +1,44 @@
 import asyncio
-import os
-
-from aiohttp import web
-from aiogram import Dispatcher
-from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 
 from config import settings
 from database.db import engine
 from database.models import Base
-from handlers import start, profile, rating, invite, leaderboard, report, admin, moderation
 from loader import bot, dp
-from middlewares.antiflood import AntiFloodMiddleware
-from utils.logger import logger
-
-
-WEBHOOK_PATH = f"/webhook/{settings.bot_token}"
-
-
-async def on_startup() -> None:
-    # DB init
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-
-    webhook_base = os.getenv("WEBHOOK_BASE_URL") or os.getenv("RAILWAY_PUBLIC_DOMAIN")
-    if not webhook_base:
-        raise RuntimeError("WEBHOOK_BASE_URL эсвэл RAILWAY_PUBLIC_DOMAIN тохируулаагүй байна.")
-    webhook_base = webhook_base.rstrip("/")
-    webhook_url = f"{webhook_base}{WEBHOOK_PATH}"
-
-    await bot.set_webhook(webhook_url)
-    logger.info("Webhook set to %s", webhook_url)
-
-
-def setup_routers(dispatcher: Dispatcher) -> None:
-    dispatcher.include_router(start.router)
-    dispatcher.include_router(profile.router)
-    dispatcher.include_router(rating.router)
-    dispatcher.include_router(invite.router)
-    dispatcher.include_router(leaderboard.router)
-    dispatcher.include_router(report.router)
-    dispatcher.include_router(admin.router)
-    dispatcher.include_router(moderation.router)
+from utils.debug_log import debug_log
+from utils.logger import logger, setup_logging
 
 
 async def main() -> None:
-    setup_routers(dp)
-    dp.message.middleware(AntiFloodMiddleware())
+    setup_logging(settings.log_level)
+    # region agent log
+    debug_log("run3", "H1", "bot.py:12", "startup_begin", {"has_token": bool(settings.bot_token), "group_id": settings.group_id})
+    # endregion
+    logger.info("Бот эхэлж байна...")
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+    except Exception as exc:
+        logger.exception("DB эхлүүлэх үед алдаа гарлаа: %s", exc)
+        print("Өгөгдлийн сан руу холбогдож чадсангүй. DATABASE_URL болон сүлжээний тохиргоогоо шалгана уу.")
+        raise
 
-    app = web.Application()
-
-    SimpleRequestHandler(dispatcher=dp, bot=bot).register(app, path=WEBHOOK_PATH)
-    setup_application(app, dp, bot=bot)
-
-    await on_startup()
-
-    port = int(os.getenv("PORT", "8000"))
-    logger.info("Starting webhook server on port %s", port)
-    await web._run_app(app, host="0.0.0.0", port=port)  # type: ignore[attr-defined]
+    # region agent log
+    debug_log("run3", "H1", "bot.py:23", "db_ready", {"database_url_prefix": settings.database_url.split('://')[0]})
+    # endregion
+    await bot.delete_webhook(drop_pending_updates=True)
+    # region agent log
+    debug_log("run3", "H2", "bot.py:27", "polling_start", {"update_types_count": len(dp.resolve_used_update_types())})
+    # endregion
+    try:
+        await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
+    except Exception as exc:
+        logger.exception("Polling ажиллах үед алдаа гарлаа: %s", exc)
+        raise
+    finally:
+        logger.info("Бот унтарч байна...")
+        await bot.session.close()
+        await engine.dispose()
+        logger.info("Бот цэвэр унтарлаа.")
 
 
 if __name__ == "__main__":
