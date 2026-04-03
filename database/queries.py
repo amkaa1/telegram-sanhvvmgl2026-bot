@@ -1,4 +1,7 @@
 import datetime as dt
+import json
+import time
+from pathlib import Path
 from typing import Iterable, Sequence
 
 from sqlalchemy import and_, func, or_, select
@@ -10,6 +13,8 @@ from .models import Invite, MessageLog, Mute, Rating, Report, User, Warning
 
 RATING_WINDOW_HOURS = 72
 RATING_MAX_TARGETS_PER_WINDOW = 2
+
+LOG_PATH = Path(__file__).resolve().parents[1] / "debug-20ebd7.log"
 
 
 async def get_or_create_user(
@@ -154,7 +159,24 @@ async def increment_invite(
         )
     )
     res = await session.execute(stmt)
-    if res.scalar_one_or_none():
+    duplicate_exists = res.scalar_one_or_none() is not None
+    if duplicate_exists:
+        # #region agent log
+        payload = {
+            "sessionId": "20ebd7",
+            "runId": "pre-fix",
+            "hypothesisId": "H8_referral_double_counting_or_non_join_events",
+            "location": "database/queries.py:increment_invite",
+            "message": "Invite insert skipped (duplicate exists)",
+            "data": {"link_hash": link_hash},
+            "timestamp": int(time.time() * 1000),
+        }
+        try:
+            with open(LOG_PATH, "a", encoding="utf-8") as f:
+                f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        except Exception:  # noqa: BLE001
+            print("DEBUGLOG_WRITE_FAIL: database/queries.py:increment_invite:dup")
+        # #endregion
         return None
     invite = Invite(
         inviter_id=inviter.id, invited_user_id=invited.id, link_hash=link_hash
@@ -165,9 +187,41 @@ async def increment_invite(
             await session.flush()
     except IntegrityError:
         session.expunge(invite)
+        # #region agent log
+        try:
+            payload = {
+                "sessionId": "20ebd7",
+                "runId": "pre-fix",
+                "hypothesisId": "H8_referral_double_counting_or_non_join_events",
+                "location": "database/queries.py:increment_invite",
+                "message": "Invite insert skipped (integrity race)",
+                "data": {"link_hash": link_hash},
+                "timestamp": int(time.time() * 1000),
+            }
+            with open(LOG_PATH, "a", encoding="utf-8") as f:
+                f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        except Exception:  # noqa: BLE001
+            pass
+        # #endregion
         return None
     inviter.invites_count += 1
     await session.flush()
+    # #region agent log
+    payload = {
+        "sessionId": "20ebd7",
+        "runId": "pre-fix",
+        "hypothesisId": "H8_referral_double_counting_or_non_join_events",
+        "location": "database/queries.py:increment_invite",
+        "message": "Invite inserted",
+        "data": {"link_hash": link_hash},
+        "timestamp": int(time.time() * 1000),
+    }
+    try:
+        with open(LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+    except Exception:  # noqa: BLE001
+        print("DEBUGLOG_WRITE_FAIL: database/queries.py:increment_invite:inserted")
+    # #endregion
     return invite
 
 
@@ -342,6 +396,27 @@ async def register_invite_on_group_join(session: AsyncSession, joined_user: User
         return False
     inviter = await session.get(User, joined_user.referred_by_user_id)
     if inviter is None or inviter.id == joined_user.id:
+        # #region agent log
+        payload = {
+            "sessionId": "20ebd7",
+            "runId": "pre-fix",
+            "hypothesisId": "H8_referral_double_counting_or_non_join_events",
+            "location": "database/queries.py:register_invite_on_group_join",
+            "message": "Invite registration skipped",
+            "data": {
+                "inviter_missing": inviter is None,
+                "self_ref": inviter is not None and inviter.id == joined_user.id,
+            },
+            "timestamp": int(time.time() * 1000),
+        }
+        try:
+            with open(LOG_PATH, "a", encoding="utf-8") as f:
+                f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        except Exception:  # noqa: BLE001
+            print(
+                "DEBUGLOG_WRITE_FAIL: database/queries.py:register_invite_on_group_join"
+            )
+        # #endregion
         return False
     invite = await increment_invite(session, inviter, joined_user, "group_join")
     return invite is not None

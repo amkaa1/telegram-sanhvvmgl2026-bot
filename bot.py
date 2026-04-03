@@ -20,7 +20,17 @@ async def main() -> None:
 
     await bot.delete_webhook(drop_pending_updates=True)
     try:
-        await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
+        # Явцад шаардлагатай update-уудыг тодорхой зааж өгнө (resolve_used_update_types()
+        # зарим тохиолдолд callback_query/chat_member алдагдуулж болно).
+        await dp.start_polling(
+            bot,
+            allowed_updates=[
+                "message",
+                "callback_query",
+                "chat_member",
+                "my_chat_member",
+            ],
+        )
     except Exception as exc:
         logger.exception("Polling ажиллах үед алдаа гарлаа: %s", exc)
         raise
