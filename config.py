@@ -50,10 +50,12 @@ class Settings:
     group_id: int
     admin_ids: tuple[int, ...]
     log_level: str
+    group_invite_link: str | None
 
 
 def load_settings() -> Settings:
     raw_level = os.getenv("LOG_LEVEL", "INFO").strip().upper()
+    raw_group_link = os.getenv("GROUP_INVITE_LINK", "").strip()
     return Settings(
         bot_token=_require_env("BOT_TOKEN"),
         bot_username=_require_env("BOT_USERNAME").lstrip("@"),
@@ -61,6 +63,7 @@ def load_settings() -> Settings:
         group_id=_parse_int(_require_env("GROUP_ID"), "GROUP_ID"),
         admin_ids=_parse_admin_ids(_require_env("ADMIN_IDS")),
         log_level=raw_level or "INFO",
+        group_invite_link=raw_group_link or None,
     )
 
 

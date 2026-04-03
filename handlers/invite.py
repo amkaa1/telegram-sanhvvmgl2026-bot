@@ -20,4 +20,3 @@ async def cmd_invite(message: Message) -> None:
         "Хүн group-д орж ирсний дараа invite тоологдоно✔️."
     )
     await message.answer(text)
-

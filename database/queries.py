@@ -1,7 +1,4 @@
 import datetime as dt
-import json
-import time
-from pathlib import Path
 from typing import Iterable, Sequence
 
 from sqlalchemy import and_, func, or_, select
@@ -9,12 +6,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .models import Invite, MessageLog, Mute, Rating, Report, User, Warning
+from utils.logger import logger
 
 
 RATING_WINDOW_HOURS = 72
 RATING_MAX_TARGETS_PER_WINDOW = 2
-
-LOG_PATH = Path(__file__).resolve().parents[1] / "debug-20ebd7.log"
 
 
 async def get_or_create_user(
@@ -161,22 +157,11 @@ async def increment_invite(
     res = await session.execute(stmt)
     duplicate_exists = res.scalar_one_or_none() is not None
     if duplicate_exists:
-        # #region agent log
-        payload = {
-            "sessionId": "20ebd7",
-            "runId": "pre-fix",
-            "hypothesisId": "H8_referral_double_counting_or_non_join_events",
-            "location": "database/queries.py:increment_invite",
-            "message": "Invite insert skipped (duplicate exists)",
-            "data": {"link_hash": link_hash},
-            "timestamp": int(time.time() * 1000),
-        }
-        try:
-            with open(LOG_PATH, "a", encoding="utf-8") as f:
-                f.write(json.dumps(payload, ensure_ascii=False) + "\n")
-        except Exception:  # noqa: BLE001
-            print("DEBUGLOG_WRITE_FAIL: database/queries.py:increment_invite:dup")
-        # #endregion
+        logger.info(
+            "duplicate join skipped: invite row exists inviter_id=%s invited_id=%s",
+            inviter.id,
+            invited.id,
+        )
         return None
     invite = Invite(
         inviter_id=inviter.id, invited_user_id=invited.id, link_hash=link_hash
@@ -187,41 +172,14 @@ async def increment_invite(
             await session.flush()
     except IntegrityError:
         session.expunge(invite)
-        # #region agent log
-        try:
-            payload = {
-                "sessionId": "20ebd7",
-                "runId": "pre-fix",
-                "hypothesisId": "H8_referral_double_counting_or_non_join_events",
-                "location": "database/queries.py:increment_invite",
-                "message": "Invite insert skipped (integrity race)",
-                "data": {"link_hash": link_hash},
-                "timestamp": int(time.time() * 1000),
-            }
-            with open(LOG_PATH, "a", encoding="utf-8") as f:
-                f.write(json.dumps(payload, ensure_ascii=False) + "\n")
-        except Exception:  # noqa: BLE001
-            pass
-        # #endregion
+        logger.info(
+            "duplicate join skipped: integrity race inviter_id=%s invited_id=%s",
+            inviter.id,
+            invited.id,
+        )
         return None
     inviter.invites_count += 1
     await session.flush()
-    # #region agent log
-    payload = {
-        "sessionId": "20ebd7",
-        "runId": "pre-fix",
-        "hypothesisId": "H8_referral_double_counting_or_non_join_events",
-        "location": "database/queries.py:increment_invite",
-        "message": "Invite inserted",
-        "data": {"link_hash": link_hash},
-        "timestamp": int(time.time() * 1000),
-    }
-    try:
-        with open(LOG_PATH, "a", encoding="utf-8") as f:
-            f.write(json.dumps(payload, ensure_ascii=False) + "\n")
-    except Exception:  # noqa: BLE001
-        print("DEBUGLOG_WRITE_FAIL: database/queries.py:increment_invite:inserted")
-    # #endregion
     return invite
 
 
@@ -378,12 +336,32 @@ async def get_user_by_telegram_id(
 
 async def set_referrer_if_empty(
     session: AsyncSession, user: User, referrer_telegram_id: int
-) -> None:
-    if user.referred_by_user_id is not None or user.telegram_id == referrer_telegram_id:
-        return
-    inviter = await get_user_by_telegram_id(session, referrer_telegram_id)
-    if inviter is not None:
-        user.referred_by_user_id = inviter.id
+) -> str:
+    """Returns outcome: saved | ignored_self | ignored_already_set."""
+    if user.telegram_id == referrer_telegram_id:
+        logger.info(
+            "referral ignored: self_ref user_telegram_id=%s", user.telegram_id
+        )
+        return "ignored_self"
+    if user.referred_by_user_id is not None:
+        logger.info(
+            "referral ignored: already_set user_telegram_id=%s", user.telegram_id
+        )
+        return "ignored_already_set"
+    inviter = await get_or_create_user(
+        session,
+        telegram_id=referrer_telegram_id,
+        username=None,
+        first_name=None,
+        last_name=None,
+    )
+    user.referred_by_user_id = inviter.id
+    logger.info(
+        "referral saved user_telegram_id=%s inviter_telegram_id=%s",
+        user.telegram_id,
+        referrer_telegram_id,
+    )
+    return "saved"
 
 
 async def mark_user_joined(session: AsyncSession, user: User) -> None:
@@ -392,34 +370,44 @@ async def mark_user_joined(session: AsyncSession, user: User) -> None:
 
 
 async def register_invite_on_group_join(session: AsyncSession, joined_user: User) -> bool:
+    if joined_user.referral_join_counted:
+        logger.info(
+            "duplicate join skipped: already_counted_flag joined_user_id=%s",
+            joined_user.id,
+        )
+        return False
     if joined_user.referred_by_user_id is None:
+        logger.info(
+            "join count skipped: no_referred_by joined_user_id=%s", joined_user.id
+        )
         return False
     inviter = await session.get(User, joined_user.referred_by_user_id)
     if inviter is None or inviter.id == joined_user.id:
-        # #region agent log
-        payload = {
-            "sessionId": "20ebd7",
-            "runId": "pre-fix",
-            "hypothesisId": "H8_referral_double_counting_or_non_join_events",
-            "location": "database/queries.py:register_invite_on_group_join",
-            "message": "Invite registration skipped",
-            "data": {
-                "inviter_missing": inviter is None,
-                "self_ref": inviter is not None and inviter.id == joined_user.id,
-            },
-            "timestamp": int(time.time() * 1000),
-        }
-        try:
-            with open(LOG_PATH, "a", encoding="utf-8") as f:
-                f.write(json.dumps(payload, ensure_ascii=False) + "\n")
-        except Exception:  # noqa: BLE001
-            print(
-                "DEBUGLOG_WRITE_FAIL: database/queries.py:register_invite_on_group_join"
-            )
-        # #endregion
+        logger.warning(
+            "join count skipped: bad inviter joined_user_id=%s inviter_missing=%s",
+            joined_user.id,
+            inviter is None,
+        )
         return False
     invite = await increment_invite(session, inviter, joined_user, "group_join")
-    return invite is not None
+    now = dt.datetime.now(dt.timezone.utc)
+    if invite is not None:
+        joined_user.referral_join_counted = True
+        joined_user.referral_counted_at = now
+        logger.info(
+            "join counted joined_user_id=%s inviter_id=%s",
+            joined_user.id,
+            inviter.id,
+        )
+        return True
+    joined_user.referral_join_counted = True
+    joined_user.referral_counted_at = joined_user.referral_counted_at or now
+    logger.info(
+        "duplicate join skipped: invite_row_exists joined_user_id=%s inviter_id=%s",
+        joined_user.id,
+        inviter.id,
+    )
+    return False
 
 
 

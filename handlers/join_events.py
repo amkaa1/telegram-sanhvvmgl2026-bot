@@ -1,4 +1,5 @@
 from aiogram import F, Router
+from aiogram.enums import ParseMode
 from aiogram.types import ChatMemberUpdated
 
 from config import settings
@@ -34,6 +35,15 @@ async def on_chat_member(update: ChatMemberUpdated) -> None:
             inviter = await session.get(User, joined.referred_by_user_id)
             if inviter:
                 hits = check_reward_flags(inviter)
+                try:
+                    await update.bot.send_message(
+                        inviter.telegram_id,
+                        "🎉 <b>Таны урилгаар шинэ хэрэглэгч группд нэгдлээ.</b>\n\n"
+                        f"📨 Таны нийт урилга: <b>{inviter.invites_count}</b>",
+                        parse_mode=ParseMode.HTML,
+                    )
+                except Exception:
+                    pass
         if raid_detector.record_join():
             joined.is_suspicious = True
             for admin_id in settings.admin_ids:

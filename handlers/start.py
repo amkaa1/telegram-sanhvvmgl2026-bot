@@ -5,7 +5,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.db import SessionLocal
 from database.queries import get_or_create_user, set_referrer_if_empty
+from keyboards.inline import group_join_inline_keyboard
 from keyboards.reply import main_menu_keyboard
+from services.invite_tracker import parse_start_referral_payload
 from services.reputation import get_trust_level, is_verified
 
 router = Router()
@@ -19,6 +21,9 @@ async def cmd_start(message: Message) -> None:
     args = message.text.split(maxsplit=1) if message.text else []
     payload = args[1].strip() if len(args) == 2 else None
 
+    inviter_tid = parse_start_referral_payload(payload)
+    referral_outcome: str | None = None
+
     async with SessionLocal() as session:  # type: AsyncSession
         user = await get_or_create_user(
             session,
@@ -28,13 +33,8 @@ async def cmd_start(message: Message) -> None:
             last_name=message.from_user.last_name,
         )
 
-        if payload:
-            try:
-                inviter_telegram_id = int(payload)
-            except ValueError:
-                inviter_telegram_id = None
-            if inviter_telegram_id and inviter_telegram_id != message.from_user.id:
-                await set_referrer_if_empty(session, user, inviter_telegram_id)
+        if inviter_tid is not None:
+            referral_outcome = await set_referrer_if_empty(session, user, inviter_tid)
 
         await session.commit()
 
@@ -61,3 +61,24 @@ async def cmd_start(message: Message) -> None:
     text_lines.append("• /report – Гомдол илгээх")
 
     await message.answer("\n".join(text_lines), reply_markup=main_menu_keyboard())
+
+    if referral_outcome == "saved":
+        ref_text = (
+            "✅ <b>Таны урилга амжилттай бүртгэгдлээ.</b>\n\n"
+            "Группд нэгдсэний дараа урилгын тоо нэмэгдэнэ."
+        )
+        kb = group_join_inline_keyboard()
+        if kb is None:
+            ref_text += (
+                "\n\n⚠️ <i>Группын урилгын линк (GROUP_INVITE_LINK) тохируулагдаагүй байна. "
+                "Админ тохируулсны дараа дахин оролдоно уу.</i>"
+            )
+        else:
+            ref_text += "\n\nДоорх товчоор групп руу орно уу."
+        await message.answer(ref_text, reply_markup=kb)
+    elif referral_outcome == "ignored_already_set":
+        await message.answer(
+            "ℹ️ Урилгын эхлэгч аль хэдийн тохируулагдсан тул шинээр өөрчлөгдөөгүй."
+        )
+    elif referral_outcome == "ignored_self":
+        await message.answer("⚠️ Өөрийгөө урих боломжгүй.")

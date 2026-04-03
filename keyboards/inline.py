@@ -1,5 +1,18 @@
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
+from config import settings
+
+
+def group_join_inline_keyboard() -> InlineKeyboardMarkup | None:
+    url = settings.group_invite_link
+    if not url:
+        return None
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Группд нэгдэх", url=url)]
+        ]
+    )
+
 
 def report_reason_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(

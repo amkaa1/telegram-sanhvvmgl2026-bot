@@ -37,6 +37,10 @@ class User(Base):
     referred_by_user_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id"), nullable=True, index=True
     )
+    referral_join_counted: Mapped[bool] = mapped_column(Boolean, default=False)
+    referral_counted_at: Mapped[dt.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     has_joined_group: Mapped[bool] = mapped_column(Boolean, default=False)
     is_suspicious: Mapped[bool] = mapped_column(Boolean, default=False)
     reward_500_sent: Mapped[bool] = mapped_column(Boolean, default=False)
