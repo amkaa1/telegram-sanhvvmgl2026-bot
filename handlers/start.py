@@ -43,9 +43,7 @@ async def cmd_start(message: Message) -> None:
     text_lines.append(
         "Монголын анхны Invite Growth & Trust System-тэй хамгийн найдвартай санхүү Group-д тавтай морилно уу."
     )
-    text_lines.append("").
-        ""
-    )
+    text_lines.append("")
     text_lines.append("Үндсэн командын жагсаалт:")
 
     level = get_trust_level(user.reputation_positive)
@@ -82,3 +80,4 @@ async def cmd_start(message: Message) -> None:
         )
     elif referral_outcome == "ignored_self":
         await message.answer("⚠️ Өөрийгөө урих боломжгүй.")
+

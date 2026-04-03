@@ -27,10 +27,15 @@ def parse_start_referral_payload(raw: str | None) -> int | None:
     if not raw:
         return None
     s = raw.strip()
-    suffix = s[4:] if s.startswith("ref_") else ""
-    if s.startswith("ref_") and suffix.isdigit():
-        return int(suffix)
-    return None
+    if s.startswith("ref_"):
+        try:
+            return int(s[4:])
+        except ValueError:
+            return None
+    try:
+        return int(s)
+    except ValueError:
+        return None
 
 
 async def get_personal_invite_link(bot: Bot, user_id: int) -> str:
