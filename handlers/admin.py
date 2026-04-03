@@ -5,8 +5,9 @@ from pathlib import Path
 import urllib.request
 from urllib.error import URLError
 
+from aiogram import F
+from aiogram.filters import Command
 from aiogram import Router
-from aiogram.filters import Command, F
 from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
