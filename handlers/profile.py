@@ -8,7 +8,6 @@ import time
 import urllib.request
 from urllib.error import URLError
 
-from loader import bot
 from database.db import SessionLocal
 from database.queries import get_or_create_user
 from services.reputation import get_trust_level, is_verified
@@ -115,7 +114,7 @@ async def cmd_profile(message: Message) -> None:
         resolved_via_source = "sender"
         if arg_username:
             try:
-                resolved = await bot.get_chat(f"@{arg_username}")
+                resolved = await message.bot.get_chat(f"@{arg_username}")
                 # aiogram may return Chat-like object; normalize fields we need.
                 resolved_id = getattr(resolved, "id", None)
                 if resolved_id is not None:
