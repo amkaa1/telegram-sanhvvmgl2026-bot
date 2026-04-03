@@ -23,15 +23,20 @@ INVITE_REWARDS = [
 ]
 
 
-def build_invite_payload(user_id: int) -> str:
-    return str(user_id)
+def parse_start_referral_payload(raw: str | None) -> int | None:
+    if not raw:
+        return None
+    s = raw.strip()
+    suffix = s[4:] if s.startswith("ref_") else ""
+    if s.startswith("ref_") and suffix.isdigit():
+        return int(suffix)
+    return None
 
 
 async def get_personal_invite_link(bot: Bot, user_id: int) -> str:
     me = await bot.get_me()
     username = me.username or settings.bot_username
-    payload = build_invite_payload(user_id)
-    return f"https://t.me/{username}?start={payload}"
+    return f"https://t.me/{username}?start=ref_{user_id}"
 
 
 async def process_real_join(session: AsyncSession, joined_user: User) -> bool:
