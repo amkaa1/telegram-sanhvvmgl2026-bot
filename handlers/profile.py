@@ -35,7 +35,7 @@ async def cmd_profile(message: Message) -> None:
         if target.username:
             lines.append(f"🔗 Username: @{target.username}")
         lines.append("")
-        lines.append(f"⭐ Итгэлийн түвшин: <b>{level}</b>")
+        lines.append(f"✅ Trust Level: <b>{level}</b>")
         lines.append(f"👍 Сайн: <b>{user.reputation_positive}</b>")
         lines.append(f"👎 Муу: <b>{user.reputation_negative}</b>")
         lines.append(f"📨 Урилга: <b>{user.invites_count}</b>")

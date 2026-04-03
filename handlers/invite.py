@@ -15,9 +15,9 @@ async def cmd_invite(message: Message) -> None:
 
     link = await get_personal_invite_link(message.bot, message.from_user.id)
     text = (
-        "📨 <b>Таны invite холбоос</b>\n\n"
+        "📨 <b>Таны invite link</b>\n\n"
         f"{link}\n\n"
-        "Хүн group-д орж ирсний дараа invite тоологдоно."
+        "Хүн group-д орж ирсний дараа invite тоологдоно✔️."
     )
     await message.answer(text)
 
