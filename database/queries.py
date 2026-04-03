@@ -1,7 +1,8 @@
 import datetime as dt
 from typing import Iterable, Sequence
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .models import Invite, MessageLog, Mute, Rating, Report, User, Warning
@@ -146,7 +147,6 @@ async def increment_invite(
     invited: User,
     link_hash: str,
 ) -> Invite | None:
-    # avoid duplicate counting for same invited user
     stmt = select(Invite).where(
         and_(
             Invite.inviter_id == inviter.id,
@@ -154,14 +154,19 @@ async def increment_invite(
         )
     )
     res = await session.execute(stmt)
-    existing = res.scalar_one_or_none()
-    if existing:
+    if res.scalar_one_or_none():
         return None
     invite = Invite(
         inviter_id=inviter.id, invited_user_id=invited.id, link_hash=link_hash
     )
-    inviter.invites_count += 1
     session.add(invite)
+    try:
+        async with session.begin_nested():
+            await session.flush()
+    except IntegrityError:
+        session.expunge(invite)
+        return None
+    inviter.invites_count += 1
     await session.flush()
     return invite
 
@@ -262,10 +267,29 @@ async def get_group_stats(
     stmt_invites = select(func.sum(User.invites_count))
     invites_total = int((await session.execute(stmt_invites)).scalar_one() or 0)
 
+    stmt_verified = select(func.count(User.id)).where(User.verified.is_(True))
+    verified_count = int((await session.execute(stmt_verified)).scalar_one() or 0)
+
+    stmt_suspicious = select(func.count(User.id)).where(User.is_suspicious.is_(True))
+    suspicious_count = int((await session.execute(stmt_suspicious)).scalar_one() or 0)
+
+    stmt_rewards = select(func.count(User.id)).where(
+        or_(
+            User.reward_500_sent.is_(True),
+            User.reward_1000_sent.is_(True),
+            User.reward_2000_sent.is_(True),
+            User.reward_5000_sent.is_(True),
+        )
+    )
+    reward_users = int((await session.execute(stmt_rewards)).scalar_one() or 0)
+
     return {
         "users": users_count,
         "reports": reports_count,
         "invites": invites_total,
+        "verified": verified_count,
+        "suspicious": suspicious_count,
+        "reward_users": reward_users,
     }
 
 
@@ -289,4 +313,38 @@ async def get_users_by_ids(
     res = await session.execute(stmt)
     users = res.scalars().all()
     return {u.telegram_id: u for u in users}
+
+
+async def get_user_by_telegram_id(
+    session: AsyncSession, telegram_id: int
+) -> User | None:
+    res = await session.execute(select(User).where(User.telegram_id == telegram_id))
+    return res.scalar_one_or_none()
+
+
+async def set_referrer_if_empty(
+    session: AsyncSession, user: User, referrer_telegram_id: int
+) -> None:
+    if user.referred_by_user_id is not None or user.telegram_id == referrer_telegram_id:
+        return
+    inviter = await get_user_by_telegram_id(session, referrer_telegram_id)
+    if inviter is not None:
+        user.referred_by_user_id = inviter.id
+
+
+async def mark_user_joined(session: AsyncSession, user: User) -> None:
+    if not user.has_joined_group:
+        user.has_joined_group = True
+
+
+async def register_invite_on_group_join(session: AsyncSession, joined_user: User) -> bool:
+    if joined_user.referred_by_user_id is None:
+        return False
+    inviter = await session.get(User, joined_user.referred_by_user_id)
+    if inviter is None or inviter.id == joined_user.id:
+        return False
+    invite = await increment_invite(session, inviter, joined_user, "group_join")
+    return invite is not None
+
+
 

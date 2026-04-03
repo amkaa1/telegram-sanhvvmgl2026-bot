@@ -5,17 +5,12 @@ from dataclasses import dataclass
 
 from dotenv import load_dotenv
 
-from utils.debug_log import debug_log
-
 load_dotenv()
 
 
 def _require_env(name: str) -> str:
     value = os.getenv(name, "").strip()
     if not value:
-        # region agent log
-        debug_log("run3", "H1", "config.py:16", "missing_env", {"name": name})
-        # endregion
         raise RuntimeError(f"'{name}' орчны хувьсагч заавал тохируулагдсан байх ёстой.")
     return value
 
@@ -58,15 +53,15 @@ class Settings:
 
 
 def load_settings() -> Settings:
+    raw_level = os.getenv("LOG_LEVEL", "INFO").strip().upper()
     return Settings(
         bot_token=_require_env("BOT_TOKEN"),
         bot_username=_require_env("BOT_USERNAME").lstrip("@"),
         database_url=_normalize_database_url(_require_env("DATABASE_URL")),
         group_id=_parse_int(_require_env("GROUP_ID"), "GROUP_ID"),
         admin_ids=_parse_admin_ids(_require_env("ADMIN_IDS")),
-        log_level=os.getenv("LOG_LEVEL", "INFO").upper(),
+        log_level=raw_level or "INFO",
     )
 
 
 settings = load_settings()
-

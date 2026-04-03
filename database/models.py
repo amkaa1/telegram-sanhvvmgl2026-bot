@@ -28,12 +28,21 @@ class User(Base):
     first_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
     last_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(
-        DateTime(timezone=True), default=dt.datetime.utcnow
+        DateTime(timezone=True), default=lambda: dt.datetime.now(dt.timezone.utc)
     )
     reputation_positive: Mapped[int] = mapped_column(Integer, default=0)
     reputation_negative: Mapped[int] = mapped_column(Integer, default=0)
     invites_count: Mapped[int] = mapped_column(Integer, default=0)
     verified: Mapped[bool] = mapped_column(Boolean, default=False)
+    referred_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id"), nullable=True, index=True
+    )
+    has_joined_group: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_suspicious: Mapped[bool] = mapped_column(Boolean, default=False)
+    reward_500_sent: Mapped[bool] = mapped_column(Boolean, default=False)
+    reward_1000_sent: Mapped[bool] = mapped_column(Boolean, default=False)
+    reward_2000_sent: Mapped[bool] = mapped_column(Boolean, default=False)
+    reward_5000_sent: Mapped[bool] = mapped_column(Boolean, default=False)
 
     ratings_given: Mapped[list["Rating"]] = relationship(
         back_populates="from_user", foreign_keys="Rating.from_user_id"
@@ -56,9 +65,8 @@ class Rating(Base):
     to_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     is_positive: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[dt.datetime] = mapped_column(
-        DateTime(timezone=True), default=dt.datetime.utcnow
+        DateTime(timezone=True), default=lambda: dt.datetime.now(dt.timezone.utc)
     )
-    # bucketed window identifier (e.g. per 72h and per target)
     created_window: Mapped[str] = mapped_column(String(32), index=True)
 
     from_user: Mapped[User] = relationship(
@@ -71,12 +79,15 @@ class Rating(Base):
 
 class Invite(Base):
     __tablename__ = "invites"
+    __table_args__ = (
+        UniqueConstraint("inviter_id", "invited_user_id", name="uix_inviter_invited_user"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     inviter_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     invited_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[dt.datetime] = mapped_column(
-        DateTime(timezone=True), default=dt.datetime.utcnow
+        DateTime(timezone=True), default=lambda: dt.datetime.now(dt.timezone.utc)
     )
     link_hash: Mapped[str] = mapped_column(String(128), index=True)
 
@@ -102,7 +113,7 @@ class Report(Base):
     reported_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     reason: Mapped[str] = mapped_column(String(32))
     created_at: Mapped[dt.datetime] = mapped_column(
-        DateTime(timezone=True), default=dt.datetime.utcnow
+        DateTime(timezone=True), default=lambda: dt.datetime.now(dt.timezone.utc)
     )
 
 
@@ -113,7 +124,7 @@ class Warning(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(
-        DateTime(timezone=True), default=dt.datetime.utcnow
+        DateTime(timezone=True), default=lambda: dt.datetime.now(dt.timezone.utc)
     )
 
 
@@ -124,7 +135,7 @@ class Mute(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), unique=True)
     until: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[dt.datetime] = mapped_column(
-        DateTime(timezone=True), default=dt.datetime.utcnow
+        DateTime(timezone=True), default=lambda: dt.datetime.now(dt.timezone.utc)
     )
 
 
@@ -134,6 +145,5 @@ class MessageLog(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[dt.datetime] = mapped_column(
-        DateTime(timezone=True), default=dt.datetime.utcnow, index=True
+        DateTime(timezone=True), default=lambda: dt.datetime.now(dt.timezone.utc), index=True
     )
-

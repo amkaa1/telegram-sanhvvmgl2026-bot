@@ -18,8 +18,11 @@ async def build_stats_text(session: AsyncSession) -> str:
     lines.append("📊 <b>Группийн статистик</b>")
     lines.append("")
     lines.append(f"👥 Нийт гишүүн (бүртгэлтэй): <b>{stats['users']}</b>")
+    lines.append(f"✔ Verified гишүүн: <b>{stats.get('verified', 0)}</b>")
     lines.append(f"📨 Нийт урилга (тоологдсон): <b>{stats['invites']}</b>")
     lines.append(f"🚨 Нийт гомдол (spam/scam/fake): <b>{spam_reports}</b>")
+    lines.append(f"⚠ Сэжигтэй гишүүн: <b>{stats.get('suspicious', 0)}</b>")
+    lines.append(f"🎁 Шагналын босго хүрсэн: <b>{stats.get('reward_users', 0)}</b>")
     lines.append("")
 
     if top_rep:

@@ -1,18 +1,17 @@
 from __future__ import annotations
 
-import hashlib
-
 from aiogram import Bot
-from aiogram.types import User as TgUser
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings
-from database.models import User
 from database.queries import (
     get_or_create_user,
     get_top_users_by_invites,
     increment_invite,
+    mark_user_joined,
+    register_invite_on_group_join,
 )
+from database.models import User
 from utils.logger import logger
 
 
@@ -25,22 +24,25 @@ INVITE_REWARDS = [
 
 
 def build_invite_payload(user_id: int) -> str:
-    # payload is шууд хэрэглэгчийн ID-г ашиглана (hash биш) –
-    # ингэснээр /start payload-аас урилга өгсөн хүнийг шууд тодорхойлно.
     return str(user_id)
 
 
 async def get_personal_invite_link(bot: Bot, user_id: int) -> str:
-    # Telegram deep-link: https://t.me/<bot>?start=<payload>
-    me = await bot.me()
+    me = await bot.get_me()
+    username = me.username or settings.bot_username
     payload = build_invite_payload(user_id)
-    return f"https://t.me/{me.username}?start={payload}"
+    return f"https://t.me/{username}?start={payload}"
+
+
+async def process_real_join(session: AsyncSession, joined_user: User) -> bool:
+    await mark_user_joined(session, joined_user)
+    return await register_invite_on_group_join(session, joined_user)
 
 
 async def handle_new_member(
     session: AsyncSession,
-    inviter_tg: TgUser | None,
-    new_tg: TgUser,
+    inviter_tg,
+    new_tg,
     link_hash: str | None,
     bot: Bot,
 ) -> None:
@@ -91,4 +93,3 @@ async def _check_and_notify_rewards(bot: Bot, inviter: User) -> None:
 
 async def get_invite_leaderboard(session: AsyncSession, limit: int = 10):
     return await get_top_users_by_invites(session, limit=limit)
-
