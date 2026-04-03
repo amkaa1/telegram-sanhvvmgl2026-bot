@@ -9,8 +9,6 @@ from aiogram import F
 from aiogram.filters import Command
 from aiogram import Router
 from aiogram.types import CallbackQuery, Message
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from analytics.stats import build_stats_text
 from config import settings
 from database.db import SessionLocal
@@ -180,7 +178,7 @@ async def admin_menu_callback(call: CallbackQuery) -> None:
         return
 
     try:
-        async with SessionLocal() as session:  # type: AsyncSession
+        async with SessionLocal() as session:
             if call.data == "admin_stats":
                 text = await build_stats_text(session)
             else:
@@ -289,7 +287,7 @@ async def cmd_checkuser(message: Message) -> None:
     target = message.reply_to_message.from_user
     from database.queries import get_or_create_user, get_warning_count
 
-    async with SessionLocal() as session:  # type: AsyncSession
+    async with SessionLocal() as session:
         u = await get_or_create_user(
             session,
             telegram_id=target.id,
