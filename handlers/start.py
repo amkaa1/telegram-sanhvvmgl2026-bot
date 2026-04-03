@@ -41,24 +41,24 @@ async def cmd_start(message: Message) -> None:
     text_lines: list[str] = []
     text_lines.append("👋 Сайн байна уу!")
     text_lines.append(
-        "Энэ бол манай группийн <b>итгэлцэл, урилга, модерацийн</b> бот юм."
+        "Монголын анхны Invite Growth & Trust System-тэй хамгийн найдвартай санхүү Group-д тавтай морилно уу."
     )
-    text_lines.append("")
-    text_lines.append(
-        "Хүн group-д орж ирсний дараа урилгын тоо нэмэгдэнэ. Эхлээд /invite линк ашиглана уу."
+    text_lines.append("").
+        ""
     )
-    text_lines.append("")
+    text_lines.append("Үндсэн командын жагсаалт:")
 
     level = get_trust_level(user.reputation_positive)
     badge = "✔ Verified" if is_verified(user.reputation_positive) or user.verified else ""
     profile_line = f"👤 Таны түвшин: <b>{level}</b>" + (f" ({badge})" if badge else "")
     text_lines.append(profile_line)
     text_lines.append("")
-    text_lines.append("Үндсэн командууд:")
-    text_lines.append("• /profile – Профайл харах")
-    text_lines.append("• /invite – Урилгын хувийн линк")
-    text_lines.append("• /top эсвэл /leaderboard – Лидерүүд")
-    text_lines.append("• /report – Гомдол илгээх")
+    text_lines.append("👤/profile — Таны мэдээлэл")
+    text_lines.append("🔗/invite — Урилгын линк авах")
+    text_lines.append("🏆/leaderboard — Шилдэг гишүүд")
+    text_lines.append("⚖️/good @user — Сайн үнэлгээ өгөх") 
+    text_lines.append("🚫/bad @user — Муу үнэлгээ")
+    text_lines.append(" /report – Гомдол илгээх")
 
     await message.answer("\n".join(text_lines), reply_markup=main_menu_keyboard())
 
@@ -78,7 +78,7 @@ async def cmd_start(message: Message) -> None:
         await message.answer(ref_text, reply_markup=kb)
     elif referral_outcome == "ignored_already_set":
         await message.answer(
-            "ℹ️ Урилгын эхлэгч аль хэдийн тохируулагдсан тул шинээр өөрчлөгдөөгүй."
+            "ℹ️ Урилгын линк дээр та дарсан байна"
         )
     elif referral_outcome == "ignored_self":
         await message.answer("⚠️ Өөрийгөө урих боломжгүй.")
