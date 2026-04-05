@@ -3,6 +3,7 @@ from aiogram.filters import Command
 from aiogram.types import Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import asyncio
 import json
 import time
 import urllib.request
@@ -11,7 +12,7 @@ from urllib.error import URLError
 
 from database.db import SessionLocal
 from database.queries import get_or_create_user
-from services.reputation import get_trust_level
+from services.reputation import get_trust_level, is_verified
 
 
 router = Router()
@@ -201,16 +202,28 @@ async def cmd_profile(message: Message) -> None:
         level = "Verified"
 
     uname_display = f"@{target_username}" if target_username else "байхгүй"
+    badge = "✔ Verified" if is_verified(user.reputation_positive) or user.verified else ""
+    sep = "━━━━━━━━━━━━━━━"
+    level_line = (
+        f"🏅 <b>{escape(level)}</b> {badge}"
+        if badge
+        else f"🏅 <b>{escape(level)}</b>"
+    )
+    profile_text = "\n".join(
+        [
+            f"👤 {escape(uname_display)}",
+            "",
+            level_line,
+            "",
+            sep,
+            f"👍 Дэмжсэн: <b>{user.reputation_positive}</b>",
+            f"👎 Сэрэмжлүүлэг: <b>{user.reputation_negative}</b>",
+            f"📨 Урилга: <b>{user.invites_count}</b>",
+            sep,
+        ]
+    )
 
-    lines: list[str] = [
-        f"👤 Профайл: {escape(target_full_name)}",
-        f"🔗 Username: {escape(uname_display)}",
-        "",
-        f"✅ Trust Level: <b>{escape(level)}</b>",
-        f"👍 Дэмжсэн: <b>{user.reputation_positive}</b>",
-        f"👎 Сэрэмжлүүлэх: <b>{user.reputation_negative}</b>",
-        f"📨 Урилга: <b>{user.invites_count}</b>",
-    ]
-
-    await message.answer("\n".join(lines))
+    loading = await message.answer("⏳ Профайл ачааллаж байна...")
+    await asyncio.sleep(0.8)
+    await loading.edit_text(profile_text)
 
