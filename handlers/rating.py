@@ -28,7 +28,8 @@ async def cmd_good(message: Message) -> None:
     target = await _extract_target_from_message(message)
     if target is None:
         await message.answer(
-            "👍 Сайн үнэлгээ өгөхийн тулд тухайн гишүүний мессеж дээр reply хийгээд /good гэж бичнэ үү."
+            "👍 Дэмжихийн тулд тухайн гишүүний мессеж дээр reply хийгээд "
+            "<code>/good</code> эсвэл reply цэснээс «👍 Дэмжих» дарна уу."
         )
         return
 
@@ -44,7 +45,8 @@ async def cmd_bad(message: Message) -> None:
     target = await _extract_target_from_message(message)
     if target is None:
         await message.answer(
-            "👎 Муу үнэлгээ өгөхийн тулд тухайн гишүүний мессеж дээр reply хийгээд /bad гэж бичнэ үү."
+            "👎 Сэрэмжлүүлэхийн тулд тухайн гишүүний мессеж дээр reply хийгээд "
+            "<code>/bad</code> эсвэл reply цэснээс «👎 Сэрэмжлүүлэх» дарна уу."
         )
         return
 

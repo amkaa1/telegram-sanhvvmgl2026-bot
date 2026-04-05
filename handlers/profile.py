@@ -6,11 +6,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import json
 import time
 import urllib.request
+from html import escape
 from urllib.error import URLError
 
 from database.db import SessionLocal
 from database.queries import get_or_create_user
-from services.reputation import get_trust_level, is_verified
+from services.reputation import get_trust_level
 
 
 router = Router()
@@ -196,19 +197,20 @@ async def cmd_profile(message: Message) -> None:
     )
 
     level = get_trust_level(user.reputation_positive)
-    verified_badge = "✔ Verified" if is_verified(user.reputation_positive) or user.verified else ""
+    if user.verified and level != "Verified":
+        level = "Verified"
 
-    lines: list[str] = []
-    lines.append(f"👤 Профайл: <a href=\"tg://user?id={target_id}\">{target_full_name}</a>")
-    if target_username:
-        lines.append(f"🔗 Username: @{target_username}")
-    lines.append("")
-    lines.append(f"✅ Trust Level: <b>{level}</b>")
-    lines.append(f"👍 Сайн: <b>{user.reputation_positive}</b>")
-    lines.append(f"👎 Муу: <b>{user.reputation_negative}</b>")
-    lines.append(f"📨 Урилга: <b>{user.invites_count}</b>")
-    if verified_badge:
-        lines.append(f"🔒 Статус: <b>{verified_badge}</b>")
+    uname_display = f"@{target_username}" if target_username else "байхгүй"
+
+    lines: list[str] = [
+        f"👤 Профайл: {escape(target_full_name)}",
+        f"🔗 Username: {escape(uname_display)}",
+        "",
+        f"✅ Trust Level: <b>{escape(level)}</b>",
+        f"👍 Дэмжсэн: <b>{user.reputation_positive}</b>",
+        f"👎 Сэрэмжлүүлэх: <b>{user.reputation_negative}</b>",
+        f"📨 Урилга: <b>{user.invites_count}</b>",
+    ]
 
     await message.answer("\n".join(lines))
 

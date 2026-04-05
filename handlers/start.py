@@ -1,16 +1,36 @@
-from aiogram import Router
-from aiogram.filters import CommandStart
-from aiogram.types import Message
+from aiogram import F, Router
+from aiogram.filters import Command, CommandStart
+from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.db import SessionLocal
 from database.queries import get_or_create_user, set_referrer_if_empty
-from keyboards.inline import group_join_inline_keyboard
+from keyboards.inline import (
+    CALLBACK_START_CMDS,
+    CALLBACK_START_INVITE,
+    CALLBACK_START_REWARD,
+    CALLBACK_START_RULES,
+    group_join_inline_keyboard,
+    start_info_inline_keyboard,
+)
 from keyboards.reply import main_menu_keyboard
 from services.invite_tracker import parse_start_referral_payload
 from services.reputation import get_trust_level, is_verified
+from utils.start_sections import (
+    section_commands,
+    section_invite_growth,
+    section_reward_system,
+    section_rules_and_trust,
+)
 
 router = Router()
+
+_START_SECTION_HANDLERS = {
+    CALLBACK_START_RULES: section_rules_and_trust,
+    CALLBACK_START_INVITE: section_invite_growth,
+    CALLBACK_START_REWARD: section_reward_system,
+    CALLBACK_START_CMDS: section_commands,
+}
 
 
 @router.message(CommandStart())
@@ -38,27 +58,26 @@ async def cmd_start(message: Message) -> None:
 
         await session.commit()
 
-    text_lines: list[str] = []
-    text_lines.append("👋 Сайн байна уу!")
-    text_lines.append(
-        "Монголын анхны Invite Growth & Trust System-тэй хамгийн найдвартай санхүү Group-д тавтай морилно уу."
-    )
-    text_lines.append("")
-    text_lines.append("Үндсэн командын жагсаалт:")
-
     level = get_trust_level(user.reputation_positive)
     badge = "✔ Verified" if is_verified(user.reputation_positive) or user.verified else ""
-    profile_line = f"👤 Таны түвшин: <b>{level}</b>" + (f" ({badge})" if badge else "")
-    text_lines.append(profile_line)
-    text_lines.append("")
-    text_lines.append("👤/profile — Таны мэдээлэл")
-    text_lines.append("🔗/invite — Урилгын линк авах")
-    text_lines.append("🏆/leaderboard — Шилдэг гишүүд")
-    text_lines.append("⚖️/good @user — Сайн үнэлгээ өгөх") 
-    text_lines.append("🚫/bad @user — Муу үнэлгээ")
-    text_lines.append(" /report – Гомдол илгээх")
+    profile_line = f"👤 Таны одоогийн түвшин: <b>{level}</b>" + (
+        f" ({badge})" if badge else ""
+    )
 
-    await message.answer("\n".join(text_lines), reply_markup=main_menu_keyboard())
+    text_lines: list[str] = [
+        "👋 Тавтай морилно уу — таныг өндөр түвшний community bot угтлаа.",
+        "Итгэлийн түвшин, урилгын өсөлт, шагнал гэсэн систем нэг дор ажиллаж, бодит оролцоог урамшуулна.",
+        profile_line,
+        "Доорх товчлуураар дүрэм, урилга, шагнал, командын талаар уншина уу.",
+        "Өдөр тутамд доорх үндсэн цэснээс Профайл, Урилга, Дэмжих, Сэрэмжлүүлэх ашиглана.",
+        "Амжилт хүсье — хамтдаа найдвартай нийгэмлэг бүтээгээрэй.",
+    ]
+
+    await message.answer(
+        "\n".join(text_lines),
+        reply_markup=start_info_inline_keyboard(),
+    )
+    await message.answer("📱 Үндсэн доорх цэс:", reply_markup=main_menu_keyboard())
 
     if referral_outcome == "saved":
         ref_text = (
@@ -81,3 +100,31 @@ async def cmd_start(message: Message) -> None:
     elif referral_outcome == "ignored_self":
         await message.answer("⚠️ Өөрийгөө урих боломжгүй.")
 
+
+@router.callback_query(
+    F.data.in_(
+        {
+            CALLBACK_START_RULES,
+            CALLBACK_START_INVITE,
+            CALLBACK_START_REWARD,
+            CALLBACK_START_CMDS,
+        }
+    )
+)
+async def on_start_section_callback(call: CallbackQuery) -> None:
+    if call.data is None or call.message is None:
+        return
+    builder = _START_SECTION_HANDLERS.get(call.data)
+    if builder is None:
+        await call.answer()
+        return
+    await call.answer()
+    await call.message.answer(builder())
+
+
+@router.message(Command("help"))
+async def cmd_help(message: Message) -> None:
+    await message.answer(
+        "ℹ️ Тусламж: <code>/start</code> дээрх товчлуур болон доорх үндсэн цэснээс "
+        "дүрэм, урилга, шагнал, командын мэдээллийг үзнэ үү.",
+    )
