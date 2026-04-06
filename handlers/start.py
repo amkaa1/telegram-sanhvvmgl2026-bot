@@ -66,8 +66,9 @@ async def cmd_start(message: Message) -> None:
 
     text_lines: list[str] = [
     "👋 Сайн байна уу!",
-    "Санхүү 2026 — хамгийн хүчтэй Invite & Trust system-тэй community-д тавтай морил 🚀",
-    "Идэвхтэй оролцож, reputation өсгөж, бодит орлого олох боломжтой 💸"
+    "Санхүү 2026 — хамгийн найдвартай охидуудтай хүчтэй Invite & Trust system-тэй community-д тавтай морил 🚀",
+    "Идэвхтэй оролцож, reputation өсгөж, бодит орлого олох боломжтой 💸",
+    "👇 Доорх Button дээр дарж дэлгэрэнгүй мэдээлэл авна уу",
 ]
     await message.answer(
         "\n".join(text_lines),
