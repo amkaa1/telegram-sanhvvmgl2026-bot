@@ -364,6 +364,12 @@ async def set_referrer_if_empty(
     return "saved"
 
 
+async def mark_bot_private_started(session: AsyncSession, user: User) -> None:
+    if not user.bot_private_started:
+        user.bot_private_started = True
+        await session.flush()
+
+
 async def mark_user_joined(session: AsyncSession, user: User) -> None:
     if not user.has_joined_group:
         user.has_joined_group = True

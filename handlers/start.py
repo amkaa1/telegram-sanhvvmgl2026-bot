@@ -1,22 +1,28 @@
 from aiogram import F, Router
+from aiogram.enums import ChatType
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command, CommandStart
 from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from config import settings
 from database.db import SessionLocal
-from database.queries import get_or_create_user, set_referrer_if_empty
+from database.queries import get_or_create_user, mark_bot_private_started, set_referrer_if_empty
 from keyboards.inline import (
+    CALLBACK_START_BACK,
     CALLBACK_START_CMDS,
     CALLBACK_START_INVITE,
     CALLBACK_START_REWARD,
     CALLBACK_START_RULES,
     group_join_inline_keyboard,
+    start_back_inline_keyboard,
     start_info_inline_keyboard,
 )
 from keyboards.reply import main_menu_keyboard
 from services.invite_tracker import parse_start_referral_payload
-from services.reputation import get_trust_level, is_verified
+from utils.messaging import notice_callback_expired
 from utils.start_sections import (
+    help_full_text,
     section_commands,
     section_invite_growth,
     section_reward_system,
@@ -32,9 +38,27 @@ _START_SECTION_HANDLERS = {
     CALLBACK_START_CMDS: section_commands,
 }
 
+PRIVATE_WELCOME_HTML = (
+    "<b>Сайн байна уу.</b>\n\n"
+    "Энэ bot нь группын <b>Trust</b>, <b>профайл</b>, <b>урилга</b>, "
+    "<b>лидерборд</b> зэргийг нэг дор харахад тусална.\n\n"
+    "Доорх товчлуураас дүрэм, invite, шагналын тайлбарыг нээгээд үзээрэй. "
+    "Командуудыг <code>/help</code>-аар шууд харж болно.\n\n"
+    "Групп дээрх зарим үр дүн <b>товч</b> харагдаж, дэлгэрэнгүй нь ихэвчлэн "
+    "энэ хувийн чат руу илгээгдэнэ."
+)
 
-@router.message(CommandStart())
-async def cmd_start(message: Message) -> None:
+
+@router.message(CommandStart(), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
+async def cmd_start_group(message: Message) -> None:
+    await message.answer(
+        "Энэ bot-ын бүрэн цэс, тайлбарыг <b>хувийн чат</b> дээр ашиглана уу.\n\n"
+        f"@{settings.bot_username} → <code>/start</code>"
+    )
+
+
+@router.message(CommandStart(), F.chat.type == ChatType.PRIVATE)
+async def cmd_start_private(message: Message) -> None:
     if message.from_user is None:
         return
 
@@ -52,50 +76,53 @@ async def cmd_start(message: Message) -> None:
             first_name=message.from_user.first_name,
             last_name=message.from_user.last_name,
         )
+        await mark_bot_private_started(session, user)
 
         if inviter_tid is not None:
             referral_outcome = await set_referrer_if_empty(session, user, inviter_tid)
 
         await session.commit()
 
-    level = get_trust_level(user.reputation_positive)
-    badge = "✔ Verified" if is_verified(user.reputation_positive) or user.verified else ""
-    profile_line = f"👤 Таны одоогийн түвшин: <b>{level}</b>" + (
-        f" ({badge})" if badge else ""
-    )
-
-    text_lines: list[str] = [
-    "👋 Сайн байна уу!",
-    "Санхүү 2026 — хамгийн найдвартай охидуудтай хүчтэй Invite & Trust system-тэй community-д тавтай морил 🚀",
-    "Идэвхтэй оролцож, reputation өсгөж, бодит орлого олох боломжтой 💸",
-    "👇 Доорх Button дээр дарж дэлгэрэнгүй мэдээлэл авна уу",
-]
     await message.answer(
-        "\n".join(text_lines),
+        PRIVATE_WELCOME_HTML,
         reply_markup=start_info_inline_keyboard(),
     )
-    await message.answer("📱 Үндсэн доорх цэс:", reply_markup=main_menu_keyboard())
+    await message.answer("Үндсэн цэс:", reply_markup=main_menu_keyboard())
 
     if referral_outcome == "saved":
         ref_text = (
-            "✅ <b>Таны урилга амжилттай бүртгэгдлээ.</b>\n\n"
+            "✅ <b>Урилга бүртгэгдлээ.</b>\n\n"
             "Группд нэгдсэний дараа урилгын тоо нэмэгдэнэ."
         )
         kb = group_join_inline_keyboard()
         if kb is None:
             ref_text += (
-                "\n\n⚠️ <i>Группын урилгын линк (GROUP_INVITE_LINK) тохируулагдаагүй байна. "
+                "\n\n⚠️ <i>GROUP_INVITE_LINK тохируулагдаагүй байна. "
                 "Админ тохируулсны дараа дахин оролдоно уу.</i>"
             )
         else:
             ref_text += "\n\nДоорх товчоор групп руу орно уу."
         await message.answer(ref_text, reply_markup=kb)
     elif referral_outcome == "ignored_already_set":
-        await message.answer(
-            "ℹ️ Урилгын линк дээр та дарсан байна"
-        )
+        await message.answer("ℹ️ Урилгын холбоосыг өмнө нь ашигласан байна.")
     elif referral_outcome == "ignored_self":
         await message.answer("⚠️ Өөрийгөө урих боломжгүй.")
+
+
+@router.callback_query(F.data == CALLBACK_START_BACK)
+async def on_start_back_callback(call: CallbackQuery) -> None:
+    if call.message is None:
+        return
+    await call.answer()
+    try:
+        await call.message.edit_text(
+            PRIVATE_WELCOME_HTML,
+            reply_markup=start_info_inline_keyboard(),
+        )
+    except TelegramBadRequest as exc:
+        if "message is not modified" in str(exc).lower():
+            return
+        await call.answer(notice_callback_expired(), show_alert=True)
 
 
 @router.callback_query(
@@ -116,12 +143,21 @@ async def on_start_section_callback(call: CallbackQuery) -> None:
         await call.answer()
         return
     await call.answer()
-    await call.message.answer(builder())
+    text = builder()
+    try:
+        await call.message.edit_text(
+            text,
+            reply_markup=start_back_inline_keyboard(),
+        )
+    except TelegramBadRequest as exc:
+        if "message is not modified" in str(exc).lower():
+            return
+        try:
+            await call.message.answer(text, reply_markup=start_back_inline_keyboard())
+        except Exception:
+            await call.answer(notice_callback_expired(), show_alert=True)
 
 
 @router.message(Command("help"))
 async def cmd_help(message: Message) -> None:
-    await message.answer(
-        "ℹ️ Тусламж: <code>/start</code> дээрх товчлуур болон доорх үндсэн цэснээс "
-        "дүрэм, урилга, шагнал, командын мэдээллийг үзнэ үү.",
-    )
+    await message.answer(help_full_text())

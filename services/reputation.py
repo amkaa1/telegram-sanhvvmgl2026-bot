@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+
 from aiogram.types import User as TgUser
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -37,23 +39,38 @@ async def ensure_user(
     )
 
 
+@dataclass(frozen=True)
+class RatingResult:
+    ok: bool
+    group_line: str
+    detail_html: str | None
+
+
 async def rate_user(
     session: AsyncSession,
     from_tg: TgUser,
     to_tg: TgUser,
     positive: bool,
-) -> tuple[bool, str]:
+) -> RatingResult:
     from_user = await ensure_user(session, from_tg)
     to_user = await ensure_user(session, to_tg)
 
     if from_user.id == to_user.id:
-        return False, "Та өөрийгөө үнэлж болохгүй."
+        return RatingResult(
+            ok=False,
+            group_line="Өөрийгөө үнэлэх боломжгүй.",
+            detail_html=None,
+        )
 
     allowed = await can_rate_user(session, from_user, to_user)
     if not allowed:
-        return False, (
-            "Та сүүлийн 72 цагийн дотор 2 өөр гишүүнийг аль хэдийн үнэлсэн байна.\n"
-            "Дараа нь дахин оролдоно уу."
+        return RatingResult(
+            ok=False,
+            group_line=(
+                "72 цагийн хугацаанд хамгийн ихдээ 2 өөр гишүүнд үнэлгээ өгөх боломжтой. "
+                "Дараа дахин оролдоно уу."
+            ),
+            detail_html=None,
         )
 
     await add_rating(session, from_user, to_user, positive)
@@ -61,15 +78,20 @@ async def rate_user(
     await session.commit()
 
     level = get_trust_level(to_user.reputation_positive)
+    action = "Дэмжлэг" if positive else "Сэрэмжлүүлэг"
+    group_line = (
+        f"{'👍' if positive else '👎'} {to_tg.mention_html()} — <b>{action}</b> бүртгэгдлээ. "
+        f"Trust: <b>{level}</b>"
+    )
     if positive:
-        msg = (
-            f"{to_tg.mention_html()} гишүүдээс <b>сайн үнэлгээ</b> авлаа.\n"
-            f"Түүний итгэлийн түвшин: <b>{level}</b>"
+        detail = (
+            f"{to_tg.mention_html()} — <b>сайн үнэлгээ</b> авлаа.\n"
+            f"Trust түвшин: <b>{level}</b>"
         )
     else:
-        msg = (
-            f"{to_tg.mention_html()} гишүүдээс <b>муу үнэлгээ</b> авлаа.\n"
-            f"Түүний итгэлийн түвшин: <b>{level}</b>"
+        detail = (
+            f"{to_tg.mention_html()} — <b>сэрэмжлүүлэг</b> бүртгэгдлээ.\n"
+            f"Trust түвшин: <b>{level}</b>"
         )
-    return True, msg
+    return RatingResult(ok=True, group_line=group_line, detail_html=detail)
 

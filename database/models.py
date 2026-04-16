@@ -47,6 +47,7 @@ class User(Base):
     reward_1000_sent: Mapped[bool] = mapped_column(Boolean, default=False)
     reward_2000_sent: Mapped[bool] = mapped_column(Boolean, default=False)
     reward_5000_sent: Mapped[bool] = mapped_column(Boolean, default=False)
+    bot_private_started: Mapped[bool] = mapped_column(Boolean, default=False)
 
     ratings_given: Mapped[list["Rating"]] = relationship(
         back_populates="from_user", foreign_keys="Rating.from_user_id"
@@ -150,4 +151,28 @@ class MessageLog(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: dt.datetime.now(dt.timezone.utc), index=True
+    )
+
+
+class GroupButtonThrottle(Base):
+    """Per-Telegram-user limits for inline callbacks in group/supergroup chats."""
+
+    __tablename__ = "group_button_throttles"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    telegram_user_id: Mapped[int] = mapped_column(BigInteger, unique=True, index=True)
+    locked_until: Mapped[dt.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_press_at: Mapped[dt.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    burst_window_start: Mapped[dt.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    burst_count: Mapped[int] = mapped_column(Integer, default=0)
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: dt.datetime.now(dt.timezone.utc),
+        onupdate=lambda: dt.datetime.now(dt.timezone.utc),
     )

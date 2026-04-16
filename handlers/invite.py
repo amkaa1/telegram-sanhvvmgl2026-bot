@@ -1,9 +1,10 @@
 from aiogram import Router
+from aiogram.enums import ChatType
 from aiogram.filters import Command
 from aiogram.types import Message
 
 from services.invite_tracker import get_personal_invite_link
-
+from utils.messaging import notice_dm_blocked, notice_dm_sent, safe_send_dm
 
 router = Router()
 
@@ -14,9 +15,26 @@ async def cmd_invite(message: Message) -> None:
         return
 
     link = await get_personal_invite_link(message.bot, message.from_user.id)
-    text = (
-        "📨 <b>Таны invite link</b>\n\n"
+    detail = (
+        "📨 <b>Таны урилгын линк</b>\n\n"
         f"{link}\n\n"
-        "Хүн group-д орж ирсний дараа invite тоологдоно✔️."
+        "Хүн группд нэгдсэний дараа урилга тоологдоно."
     )
-    await message.answer(text)
+
+    if message.chat.type == ChatType.PRIVATE:
+        await message.answer(detail)
+        return
+
+    sent = await safe_send_dm(
+        message.bot,
+        telegram_user_id=message.from_user.id,
+        text=detail,
+    )
+    if sent:
+        await message.answer(notice_dm_sent())
+        return
+
+    await message.answer(
+        f"{notice_dm_blocked()}\n\n"
+        f"📨 Урилгын линк:\n{link}"
+    )

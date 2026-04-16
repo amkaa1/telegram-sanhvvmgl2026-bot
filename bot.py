@@ -20,6 +20,11 @@ async def _ensure_referral_columns(conn) -> None:
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_counted_at TIMESTAMP WITH TIME ZONE"
         )
     )
+    await conn.execute(
+        text(
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS bot_private_started BOOLEAN DEFAULT FALSE"
+        )
+    )
 
 
 async def main() -> None:

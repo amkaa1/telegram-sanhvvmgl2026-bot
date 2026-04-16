@@ -1,9 +1,9 @@
 from aiogram.types import KeyboardButton, ReplyKeyboardMarkup
 
-REPLY_BTN_PROFILE = "👤 Профайл"
-REPLY_BTN_INVITE = "🔗 Урилга"
-REPLY_BTN_GOOD = "👍 Дэмжих"
-REPLY_BTN_BAD = "👎 Сэрэмжлүүлэх"
+REPLY_BTN_PROFILE = "Профайл"
+REPLY_BTN_INVITE = "Урилга"
+REPLY_BTN_GOOD = "/good"
+REPLY_BTN_BAD = "/bad"
 
 MAIN_MENU_BUTTON_TEXTS = frozenset(
     {REPLY_BTN_PROFILE, REPLY_BTN_INVITE, REPLY_BTN_GOOD, REPLY_BTN_BAD}
