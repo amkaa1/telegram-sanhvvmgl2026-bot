@@ -20,19 +20,24 @@ TRUST_LEVELS = [
     (0, 10, "Шинэ гишүүн"),
     (10, 50, "Идэвхтэй гишүүн"),
     (50, 200, "Итгэлтэй гишүүн"),
-    (200, 10 ** 9, "Verified"),
+    (200, 10 ** 12, "Verified"),
 ]
 
 
-def get_trust_level(positive: int) -> str:
+def trust_points(positive: int, negative: int) -> int:
+    return max(0, positive - negative)
+
+
+def get_trust_level(positive: int, negative: int) -> str:
+    points = trust_points(positive, negative)
     for low, high, label in TRUST_LEVELS:
-        if low <= positive < high:
+        if low <= points < high:
             return label
     return "Шинэ гишүүн"
 
 
-def is_verified(positive: int) -> bool:
-    return positive >= 200
+def is_verified(positive: int, negative: int) -> bool:
+    return trust_points(positive, negative) >= 200
 
 
 def format_remaining_time(seconds: int) -> str:
@@ -61,7 +66,7 @@ def get_user_display_label(tg_user: TgUser) -> str:
 def resolve_badge(user: User) -> str:
     if user.manual_badge_override:
         return user.manual_badge_override
-    return get_trust_level(user.reputation_positive)
+    return get_trust_level(user.reputation_positive, user.reputation_negative)
 
 
 async def ensure_user(
@@ -137,7 +142,10 @@ async def rate_user(
     )
     if rating is None:
         return RatingResult(ok=False, group_line="Системийн алдаа гарлаа.", dm_line=None)
-    to_user.verified = is_verified(to_user.reputation_positive)
+    if to_user.manual_badge_override:
+        to_user.verified = True
+    else:
+        to_user.verified = is_verified(to_user.reputation_positive, to_user.reputation_negative)
     undo = await create_rating_undo_token(
         session,
         rating_id=rating.id,

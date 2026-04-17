@@ -1,7 +1,7 @@
 from aiogram import Router
 from aiogram.enums import ChatType
 from aiogram.filters import Command
-from aiogram.types import Message
+from aiogram.types import Message, ReplyKeyboardRemove
 
 from database.db import SessionLocal
 from keyboards.menu import open_bot_private_keyboard
@@ -44,4 +44,7 @@ async def cmd_menu(message: Message) -> None:
             delay_seconds=60,
         )
         return
-    await message.answer("✅ Цэс нээгдлээ ✅", reply_markup=main_menu_keyboard())
+    await message.answer(
+        "Group дээр /menu гэж бичээд ашиглах боломжтой .",
+        reply_markup=ReplyKeyboardRemove(),
+    )

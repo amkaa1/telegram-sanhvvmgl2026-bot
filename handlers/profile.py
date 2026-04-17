@@ -3,7 +3,7 @@ from __future__ import annotations
 from aiogram import F, Router
 from aiogram.enums import ChatType
 from aiogram.filters import Command
-from aiogram.types import Message
+from aiogram.types import Message, ReplyKeyboardRemove
 
 from database.db import SessionLocal
 from database.queries import get_or_create_user
@@ -67,7 +67,7 @@ async def cmd_profile(message: Message) -> None:
         await session.commit()
 
     if message.chat.type == ChatType.PRIVATE:
-        await message.answer(profile_text)
+        await message.answer(profile_text, reply_markup=ReplyKeyboardRemove())
         return
 
     if message.from_user.id == target_tg.id:
@@ -108,7 +108,20 @@ async def cmd_profile(message: Message) -> None:
     )
 
 
-@router.message(F.text == "👤 Profile")
+@router.message(
+    F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}),
+    F.text.in_({"👤 Profile"}),
+)
 async def menu_profile(message: Message) -> None:
+    pseudo = message.model_copy(update={"text": "/profile"})
+    await cmd_profile(pseudo)
+
+
+@router.message(
+    F.chat.type == ChatType.PRIVATE,
+    F.text.in_({"👤 Profile"}),
+)
+async def private_stale_menu_profile(message: Message) -> None:
+    # Handles old cached private reply keyboards without silent failure.
     pseudo = message.model_copy(update={"text": "/profile"})
     await cmd_profile(pseudo)

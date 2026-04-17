@@ -7,6 +7,7 @@ CALLBACK_START_INVITE = "start:invite"
 CALLBACK_START_REWARD = "start:reward"
 CALLBACK_START_CMDS = "start:cmds"
 CALLBACK_START_BACK = "start:back"
+CALLBACK_START_CLOSE = "start:close"
 
 
 def start_info_inline_keyboard() -> InlineKeyboardMarkup:
@@ -14,25 +15,21 @@ def start_info_inline_keyboard() -> InlineKeyboardMarkup:
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="Дүрэм & Trust",
+                    text="📘 Дүрэм & Trust Level",
                     callback_data=CALLBACK_START_RULES,
-                )
-            ],
-            [
+                ),
                 InlineKeyboardButton(
-                    text="Invite систем",
+                    text="📨 Invite System",
                     callback_data=CALLBACK_START_INVITE,
                 )
             ],
             [
                 InlineKeyboardButton(
-                    text="Шагнал",
+                    text="🎁 Reward",
                     callback_data=CALLBACK_START_REWARD,
-                )
-            ],
-            [
+                ),
                 InlineKeyboardButton(
-                    text="Командууд",
+                    text="🧭 Командууд",
                     callback_data=CALLBACK_START_CMDS,
                 )
             ],
@@ -47,7 +44,11 @@ def start_back_inline_keyboard() -> InlineKeyboardMarkup:
                 InlineKeyboardButton(
                     text="← Буцах",
                     callback_data=CALLBACK_START_BACK,
-                )
+                ),
+                InlineKeyboardButton(
+                    text="✖️ Хаах",
+                    callback_data=CALLBACK_START_CLOSE,
+                ),
             ],
         ]
     )
