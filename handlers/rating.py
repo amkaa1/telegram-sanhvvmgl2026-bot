@@ -6,6 +6,7 @@ from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove
 from database.db import SessionLocal
 from database.queries import undo_rating_by_token
 from keyboards.menu import open_bot_private_keyboard
+from keyboards.reply import REPLY_BTN_BAD, REPLY_BTN_GOOD
 from keyboards.report import rating_undo_keyboard
 from services.reputation import rate_user
 from services.temp_message_service import schedule_delete_message, send_temp_message
@@ -28,7 +29,7 @@ async def cmd_bad(message: Message) -> None:
 
 @router.message(
     F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}),
-    F.text.in_({"👍 good", "🔥 Good", "🔥 good"}),
+    F.text.in_({REPLY_BTN_GOOD, "🔥 Good", "🔥 good"}),
 )
 async def menu_good(message: Message) -> None:
     pseudo = message.model_copy(update={"text": "/good"})
@@ -37,7 +38,7 @@ async def menu_good(message: Message) -> None:
 
 @router.message(
     F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}),
-    F.text.in_({"👎 bad", "❌ Bad", "❌ bad"}),
+    F.text.in_({REPLY_BTN_BAD, "❌ Bad", "❌ bad"}),
 )
 async def menu_bad(message: Message) -> None:
     pseudo = message.model_copy(update={"text": "/bad"})
@@ -46,7 +47,7 @@ async def menu_bad(message: Message) -> None:
 
 @router.message(
     F.chat.type == ChatType.PRIVATE,
-    F.text.in_({"👍 good", "🔥 Good", "🔥 good"}),
+    F.text.in_({REPLY_BTN_GOOD, "🔥 Good", "🔥 good"}),
 )
 async def private_stale_menu_good(message: Message) -> None:
     # Users may still have an old reply keyboard cached in private chat.
@@ -56,7 +57,7 @@ async def private_stale_menu_good(message: Message) -> None:
 
 @router.message(
     F.chat.type == ChatType.PRIVATE,
-    F.text.in_({"👎 bad", "❌ Bad", "❌ bad"}),
+    F.text.in_({REPLY_BTN_BAD, "❌ Bad", "❌ bad"}),
 )
 async def private_stale_menu_bad(message: Message) -> None:
     # Users may still have an old reply keyboard cached in private chat.
