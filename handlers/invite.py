@@ -16,9 +16,9 @@ async def cmd_invite(message: Message) -> None:
 
     link = await get_personal_invite_link(message.bot, message.from_user.id)
     detail = (
-        "📨 <b>Таны урилгын линк</b>\n\n"
+        "📨 <b>Таны Invite Link</b>\n\n"
         f"{link}\n\n"
-        "Хүн группд нэгдсэний дараа урилга тоологдоно."
+        "Таны Invite хийсэн хүн Group-д нэгдсэний дараа урилга тоологдоно."
     )
 
     if message.chat.type == ChatType.PRIVATE:

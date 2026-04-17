@@ -5,6 +5,11 @@ from __future__ import annotations
 from aiogram.enums import ChatType
 from aiogram.types import Message, User as TgUser
 
+from database.db import SessionLocal
+from database.queries import get_or_create_user, get_user_by_username
+
+UNKNOWN_USER_TEXT = "⚠️ Энэ хэрэглэгчийг одоогоор таньж чадсангүй ⚠️"
+
 
 def _strip_command_args(text: str) -> str:
     t = (text or "").strip()
@@ -34,15 +39,37 @@ async def _fetch_private_user(bot, telegram_id: int) -> TgUser | None:
 
 async def _resolve_username_arg(message: Message, username: str) -> tuple[TgUser | None, str | None]:
     if not username:
-        return None, "Хэрэглэгч олдсонгүй."
+        return None, UNKNOWN_USER_TEXT
+    async with SessionLocal() as session:
+        user = await get_user_by_username(session, username)
+        if user is not None:
+            return (
+                TgUser(
+                    id=user.telegram_id,
+                    is_bot=user.is_bot,
+                    first_name=user.first_name or "",
+                    last_name=user.last_name,
+                    username=user.username,
+                ),
+                None,
+            )
     try:
         chat = await message.bot.get_chat(f"@{username}")
     except Exception:
-        return None, "Хэрэглэгч олдсонгүй."
+        return None, UNKNOWN_USER_TEXT
     if chat.type != ChatType.PRIVATE:
-        return None, "Хэрэглэгч олдсонгүй."
+        return None, UNKNOWN_USER_TEXT
     if getattr(chat, "is_bot", False):
         return None, "Bot-д энэ үйлдэл хийх боломжгүй."
+    async with SessionLocal() as session:
+        await get_or_create_user(
+            session,
+            telegram_id=int(chat.id),
+            username=getattr(chat, "username", None),
+            first_name=getattr(chat, "first_name", None),
+            last_name=getattr(chat, "last_name", None),
+        )
+        await session.commit()
     return (
         TgUser(
             id=int(chat.id),
@@ -64,7 +91,7 @@ async def resolve_profile_target(
     Profile: default target is sender. Returns error only when username/id invalid.
     """
     if message.from_user is None:
-        return None, "Хэрэглэгч олдсонгүй."
+        return None, UNKNOWN_USER_TEXT
 
     if message.reply_to_message and message.reply_to_message.from_user:
         t = message.reply_to_message.from_user
@@ -78,7 +105,7 @@ async def resolve_profile_target(
         if lower.startswith(cmd + "@"):
             token = text.split("@", 1)[1].split(maxsplit=1)[0].strip()
             if not token:
-                return None, "Хэрэглэгч олдсонгүй."
+                return None, UNKNOWN_USER_TEXT
             return await _resolve_username_arg(message, token.lstrip("@"))
 
     if message.entities:
@@ -103,7 +130,7 @@ async def resolve_profile_target(
     if first.isdigit() and len(first) >= 5:
         u = await _fetch_private_user(message.bot, int(first))
         if u is None:
-            return None, "Хэрэглэгч олдсонгүй."
+            return None, UNKNOWN_USER_TEXT
         return u, None
 
     return message.from_user, None
@@ -118,7 +145,7 @@ async def resolve_rating_target(
     Rating requires explicit target: reply, mention, @user, or numeric id.
     """
     if message.from_user is None:
-        return None, "Хэрэглэгч олдсонгүй."
+        return None, UNKNOWN_USER_TEXT
 
     if message.reply_to_message and message.reply_to_message.from_user:
         t = message.reply_to_message.from_user
@@ -132,7 +159,7 @@ async def resolve_rating_target(
         if lower.startswith(cmd + "@"):
             token = text.split("@", 1)[1].split(maxsplit=1)[0].strip()
             if not token:
-                return None, "Хэрэглэгч олдсонгүй."
+                return None, UNKNOWN_USER_TEXT
             return await _resolve_username_arg(message, token.lstrip("@"))
 
     if message.entities:
@@ -157,7 +184,7 @@ async def resolve_rating_target(
     if first.isdigit() and len(first) >= 5:
         u = await _fetch_private_user(message.bot, int(first))
         if u is None:
-            return None, "Хэрэглэгч олдсонгүй."
+            return None, UNKNOWN_USER_TEXT
         return u, None
 
-    return None, "Хэрэглэгч олдсонгүй."
+    return None, UNKNOWN_USER_TEXT

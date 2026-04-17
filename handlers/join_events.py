@@ -45,7 +45,7 @@ async def on_chat_member(update: ChatMemberUpdated) -> None:
                 try:
                     await update.bot.send_message(
                         inviter.telegram_id,
-                        "🎉 <b>Таны урилгаар шинэ хэрэглэгч группд нэгдлээ.</b>\n\n"
+                        "🎉 <b>Таны invite-аар шинэ хэрэглэгч группд нэгдлээ.</b>\n\n"
                         f"📨 Таны нийт урилга: <b>{inviter.invites_count}</b>",
                         parse_mode=ParseMode.HTML,
                     )

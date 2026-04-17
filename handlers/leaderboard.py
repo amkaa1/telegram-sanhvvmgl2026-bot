@@ -48,7 +48,7 @@ async def _format_top_inv(session: AsyncSession) -> str:
 async def _build_leaderboard_body(session: AsyncSession) -> str:
     rep = await _format_top_rep(session)
     inv = await _format_top_inv(session)
-    return "🏆 <b>Лидерборд</b>\n\n" + rep + "\n\n" + inv
+    return "🏆 <b>Leaderboard</b>\n\n" + rep + "\n\n" + inv
 
 
 @router.message(Command("top", "leaderboard"))

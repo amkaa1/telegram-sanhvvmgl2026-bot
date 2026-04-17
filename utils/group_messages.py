@@ -6,7 +6,7 @@ from aiogram.enums import ParseMode
 
 GROUP_INTRO_TEXT = (
     "👋 Манай группт тавтай морил!\n\n"
-    "Итгэлийн систем, урилгын өсөлт, шагналын системтэй нийгэмлэгийн bot ажиллаж байна.\n\n"
+    "Trust System, Invite System, Reward System-тэй bot ажиллаж байна.\n\n"
     "📌 Дэлгэрэнгүйг bot руу /start гэж бичээд үзээрэй."
 )
 

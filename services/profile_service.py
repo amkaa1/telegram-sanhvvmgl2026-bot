@@ -1,17 +1,47 @@
 from __future__ import annotations
 
+from html import escape
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from database.queries import get_user_by_telegram_id, get_user_by_username
+from database.models import User
+from database.queries import get_approved_report_count
+from services.reputation import resolve_badge
 
 
-async def resolve_profile_target(session: AsyncSession, arg: str | None, reply_user_id: int | None, self_user_id: int):
-    if reply_user_id:
-        return await get_user_by_telegram_id(session, reply_user_id)
-    if arg and arg.startswith("@"):
-        user = await get_user_by_username(session, arg)
-        if user:
-            return user
-    if arg and arg.isdigit():
-        return await get_user_by_telegram_id(session, int(arg))
-    return await get_user_by_telegram_id(session, self_user_id)
+def _display_name(user: User) -> str:
+    full = " ".join(filter(None, [user.first_name, user.last_name])).strip()
+    if full:
+        return full
+    if user.username:
+        return f"@{user.username}"
+    return str(user.telegram_id)
+
+
+def _username_text(user: User) -> str:
+    return f"@{user.username}" if user.username else "-"
+
+
+def _trust_value(user: User) -> int:
+    return max(0, user.reputation_positive - user.reputation_negative)
+
+
+async def format_profile_text(session: AsyncSession, user: User) -> str:
+    approved_reports = await get_approved_report_count(session, user.id)
+    badge = resolve_badge(user)
+    trust_level = _trust_value(user)
+    return "\n".join(
+        [
+            "━━━━━━━━━━━━━━━",
+            f"👤 Профайл: {escape(_display_name(user))}",
+            f"🔗 Username: {escape(_username_text(user))}",
+            "━━━━━━━━━━━━━━━",
+            f"🏷 Badge: {escape(badge)}",
+            f"✅ Trust Level: {trust_level}",
+            f"👍 Good: {user.reputation_positive}",
+            f"👎 Bad: {user.reputation_negative}",
+            f"⚠️ Reports: {approved_reports}",
+            f"📨 Invites: {user.invites_count}",
+            "━━━━━━━━━━━━━━━",
+        ]
+    )

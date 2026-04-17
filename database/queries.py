@@ -1,16 +1,27 @@
 import datetime as dt
+import secrets
 from typing import Iterable, Sequence
 
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .models import Invite, MessageLog, Mute, Rating, Report, User, Warning
+from .models import (
+    Invite,
+    MessageLog,
+    Mute,
+    Rating,
+    RatingUndoToken,
+    Report,
+    User,
+    UsernameHistory,
+    Warning,
+)
 from utils.logger import logger
 
 
-RATING_WINDOW_HOURS = 72
-RATING_MAX_TARGETS_PER_WINDOW = 2
+RATING_DAILY_LIMIT = 5
+RATING_UNDO_SECONDS = 10
 
 
 async def get_or_create_user(
@@ -25,7 +36,15 @@ async def get_or_create_user(
     user = res.scalar_one_or_none()
     if user:
         updated = False
+        now = dt.datetime.now(dt.timezone.utc)
         if username is not None and user.username != username:
+            session.add(
+                UsernameHistory(
+                    user_id=user.id,
+                    old_username=user.username,
+                    new_username=username,
+                )
+            )
             user.username = username
             updated = True
         if first_name is not None and user.first_name != first_name:
@@ -34,14 +53,21 @@ async def get_or_create_user(
         if last_name is not None and user.last_name != last_name:
             user.last_name = last_name
             updated = True
+        if user.last_seen_at != now:
+            user.last_seen_at = now
+            updated = True
         if updated:
             await session.flush()
         return user
+    now = dt.datetime.now(dt.timezone.utc)
     user = User(
         telegram_id=telegram_id,
         username=username,
         first_name=first_name,
         last_name=last_name,
+        is_bot=False,
+        first_seen_at=now,
+        last_seen_at=now,
     )
     session.add(user)
     await session.flush()
@@ -49,13 +75,9 @@ async def get_or_create_user(
 
 
 def _rating_window_key(now: dt.datetime) -> str:
-    # bucket by 72h periods from epoch
-    epoch = dt.datetime(2020, 1, 1, tzinfo=dt.timezone.utc)
     if now.tzinfo is None:
         now = now.replace(tzinfo=dt.timezone.utc)
-    delta = now - epoch
-    bucket = int(delta.total_seconds() // (RATING_WINDOW_HOURS * 3600))
-    return f"w{bucket}"
+    return f"r{int(now.timestamp() * 1000000)}"
 
 
 async def can_rate_user(
@@ -63,75 +85,45 @@ async def can_rate_user(
 ) -> bool:
     if from_user.id == to_user.id:
         return False
-    now = dt.datetime.utcnow().replace(tzinfo=dt.timezone.utc)
-    window_key = _rating_window_key(now)
-
-    # count distinct targets in window
-    stmt = (
-        select(func.count(func.distinct(Rating.to_user_id)))
-        .where(
-            and_(
-                Rating.from_user_id == from_user.id,
-                Rating.created_window == window_key,
-            )
+    now = dt.datetime.now(dt.timezone.utc)
+    cutoff = now - dt.timedelta(hours=24)
+    stmt = select(func.count(Rating.id)).where(
+        and_(
+            Rating.from_user_id == from_user.id,
+            Rating.created_at >= cutoff,
+            Rating.undone_at.is_(None),
         )
     )
     res = await session.execute(stmt)
-    count_targets = res.scalar_one() or 0
-    if count_targets >= RATING_MAX_TARGETS_PER_WINDOW:
-        # already rated 2 different users
-        # However might still allow rating same user again only once – but spec says
-        # "2 different users", so we forbid new unique targets.
-        stmt_same = select(Rating).where(
-            and_(
-                Rating.from_user_id == from_user.id,
-                Rating.to_user_id == to_user.id,
-                Rating.created_window == window_key,
-            )
-        )
-        res_same = await session.execute(stmt_same)
-        existing_same = res_same.scalar_one_or_none()
-        return existing_same is not None
-    return True
+    return int(res.scalar_one() or 0) < RATING_DAILY_LIMIT
 
 
 async def add_rating(
-    session: AsyncSession, from_user: User, to_user: User, is_positive: bool
+    session: AsyncSession,
+    from_user: User,
+    to_user: User,
+    is_positive: bool,
+    *,
+    source_chat_type: str | None = None,
+    source_chat_id: int | None = None,
+    source_message_id: int | None = None,
 ) -> Rating | None:
     if from_user.id == to_user.id:
         return None
 
-    now = dt.datetime.utcnow().replace(tzinfo=dt.timezone.utc)
+    now = dt.datetime.now(dt.timezone.utc)
     window_key = _rating_window_key(now)
-
-    stmt = select(Rating).where(
-        and_(
-            Rating.from_user_id == from_user.id,
-            Rating.to_user_id == to_user.id,
-            Rating.created_window == window_key,
-        )
-    )
-    res = await session.execute(stmt)
-    rating = res.scalar_one_or_none()
-    if rating:
-        # update existing rating in this window
-        if rating.is_positive != is_positive:
-            if is_positive:
-                to_user.reputation_positive += 1
-                to_user.reputation_negative -= 1
-            else:
-                to_user.reputation_positive -= 1
-                to_user.reputation_negative += 1
-            rating.is_positive = is_positive
-            await session.flush()
-        return rating
 
     # new rating
     rating = Rating(
         from_user_id=from_user.id,
         to_user_id=to_user.id,
         is_positive=is_positive,
+        rating_type="good" if is_positive else "bad",
         created_window=window_key,
+        source_chat_type=source_chat_type,
+        source_chat_id=source_chat_id,
+        source_message_id=source_message_id,
     )
     session.add(rating)
     if is_positive:
@@ -188,11 +180,19 @@ async def add_report(
     reporter: User,
     reported: User,
     reason: str,
+    *,
+    evidence_text: str | None = None,
+    evidence_file_id: str | None = None,
+    evidence_type: str | None = None,
 ) -> Report:
     report = Report(
         reporter_id=reporter.id,
         reported_user_id=reported.id,
         reason=reason,
+        status="pending",
+        evidence_text=evidence_text,
+        evidence_file_id=evidence_file_id,
+        evidence_type=evidence_type,
     )
     session.add(report)
     await session.flush()
@@ -334,6 +334,16 @@ async def get_user_by_telegram_id(
     return res.scalar_one_or_none()
 
 
+async def get_user_by_username(
+    session: AsyncSession, username: str
+) -> User | None:
+    uname = username.lstrip("@").strip()
+    if not uname:
+        return None
+    res = await session.execute(select(User).where(User.username == uname))
+    return res.scalar_one_or_none()
+
+
 async def set_referrer_if_empty(
     session: AsyncSession, user: User, referrer_telegram_id: int
 ) -> str:
@@ -365,9 +375,120 @@ async def set_referrer_if_empty(
 
 
 async def mark_bot_private_started(session: AsyncSession, user: User) -> None:
-    if not user.bot_private_started:
-        user.bot_private_started = True
+    user.bot_private_started = True
+    user.last_seen_at = dt.datetime.now(dt.timezone.utc)
+    await session.flush()
+
+
+async def count_recent_ratings(
+    session: AsyncSession, *, actor_user_id: int, hours: int = 24
+) -> int:
+    cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=hours)
+    stmt = select(func.count(Rating.id)).where(
+        and_(
+            Rating.from_user_id == actor_user_id,
+            Rating.created_at >= cutoff,
+            Rating.undone_at.is_(None),
+        )
+    )
+    return int((await session.execute(stmt)).scalar_one() or 0)
+
+
+async def get_rating_cooldown_remaining(
+    session: AsyncSession, *, actor_user_id: int
+) -> dt.timedelta | None:
+    cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=24)
+    stmt = (
+        select(Rating.created_at)
+        .where(
+            and_(
+                Rating.from_user_id == actor_user_id,
+                Rating.created_at >= cutoff,
+                Rating.undone_at.is_(None),
+            )
+        )
+        .order_by(Rating.created_at.asc())
+    )
+    rows = (await session.execute(stmt)).scalars().all()
+    if len(rows) < RATING_DAILY_LIMIT:
+        return None
+    unlock_at = rows[0] + dt.timedelta(hours=24)
+    remaining = unlock_at - dt.datetime.now(dt.timezone.utc)
+    if remaining.total_seconds() <= 0:
+        return None
+    return remaining
+
+
+async def create_rating_undo_token(
+    session: AsyncSession, *, rating_id: int, actor_telegram_id: int
+) -> RatingUndoToken:
+    token = secrets.token_urlsafe(24)
+    undo = RatingUndoToken(
+        rating_id=rating_id,
+        actor_telegram_id=actor_telegram_id,
+        token=token,
+        expires_at=dt.datetime.now(dt.timezone.utc)
+        + dt.timedelta(seconds=RATING_UNDO_SECONDS),
+    )
+    session.add(undo)
+    await session.flush()
+    return undo
+
+
+async def undo_rating_by_token(
+    session: AsyncSession, *, token: str, actor_telegram_id: int
+) -> str:
+    now = dt.datetime.now(dt.timezone.utc)
+    res = await session.execute(
+        select(RatingUndoToken).where(RatingUndoToken.token == token)
+    )
+    undo = res.scalar_one_or_none()
+    if undo is None or undo.actor_telegram_id != actor_telegram_id:
+        return "not_found"
+    if undo.used_at is not None:
+        return "already_used"
+    if undo.expires_at < now:
+        return "expired"
+    rating = await session.get(Rating, undo.rating_id)
+    if rating is None or rating.undone_at is not None:
+        undo.used_at = now
         await session.flush()
+        return "already_used"
+    target_user = await session.get(User, rating.to_user_id)
+    if target_user is None:
+        return "not_found"
+    if rating.is_positive:
+        target_user.reputation_positive = max(0, target_user.reputation_positive - 1)
+    else:
+        target_user.reputation_negative = max(0, target_user.reputation_negative - 1)
+    rating.undone_at = now
+    undo.used_at = now
+    await session.flush()
+    return "ok"
+
+
+async def get_approved_report_count(session: AsyncSession, user_id: int) -> int:
+    stmt = select(func.count(Report.id)).where(
+        and_(Report.reported_user_id == user_id, Report.status == "approved")
+    )
+    return int((await session.execute(stmt)).scalar_one() or 0)
+
+
+async def update_report_status(
+    session: AsyncSession,
+    *,
+    report_id: int,
+    status: str,
+    admin_telegram_id: int,
+) -> Report | None:
+    report = await session.get(Report, report_id)
+    if report is None:
+        return None
+    report.status = status
+    report.reviewed_at = dt.datetime.now(dt.timezone.utc)
+    report.reviewed_by_admin_id = admin_telegram_id
+    await session.flush()
+    return report
 
 
 async def mark_user_joined(session: AsyncSession, user: User) -> None:

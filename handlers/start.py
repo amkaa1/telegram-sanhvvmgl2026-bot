@@ -18,6 +18,7 @@ from keyboards.inline import (
     start_back_inline_keyboard,
     start_info_inline_keyboard,
 )
+from keyboards.menu import open_bot_private_keyboard
 from keyboards.reply import main_menu_keyboard
 from services.invite_tracker import parse_start_referral_payload
 from utils.messaging import notice_callback_expired
@@ -39,21 +40,18 @@ _START_SECTION_HANDLERS = {
 }
 
 PRIVATE_WELCOME_HTML = (
-    "<b>Сайн байна уу.</b>\n\n"
-    "Энэ bot нь группын <b>Trust</b>, <b>профайл</b>, <b>урилга</b>, "
-    "<b>лидерборд</b> зэргийг нэг дор харахад тусална.\n\n"
-    "Доорх товчлуураас дүрэм, invite, шагналын тайлбарыг нээгээд үзээрэй. "
-    "Командуудыг <code>/help</code>-аар шууд харж болно.\n\n"
-    "Групп дээрх зарим үр дүн <b>товч</b> харагдаж, дэлгэрэнгүй нь ихэвчлэн "
-    "энэ хувийн чат руу илгээгдэнэ."
+    "✅ Bot идэвхжлээ ✅\n\n"
+    "Одоо group дээр:\n"
+    "<code>/menu</code>\n"
+    "гэж бичээд bot-оо ашиглах боломжтой."
 )
 
 
 @router.message(CommandStart(), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
 async def cmd_start_group(message: Message) -> None:
     await message.answer(
-        "Энэ bot-ын бүрэн цэс, тайлбарыг <b>хувийн чат</b> дээр ашиглана уу.\n\n"
-        f"@{settings.bot_username} → <code>/start</code>"
+        "🔒 Bot ашиглахын тулд эхлээд private chat дээр /start дарна уу 🔒",
+        reply_markup=open_bot_private_keyboard(),
     )
 
 

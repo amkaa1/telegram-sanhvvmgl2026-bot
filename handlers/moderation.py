@@ -2,7 +2,7 @@ import datetime as dt
 
 from aiogram import Router
 from aiogram.filters import Command
-from aiogram.types import Message
+from aiogram.types import ChatPermissions, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings
@@ -51,7 +51,7 @@ async def cmd_warn(message: Message) -> None:
             await session.commit()
             await message.chat.restrict(
                 user_id=target.id,
-                permissions={"can_send_messages": False},
+                permissions=ChatPermissions(can_send_messages=False),
                 until_date=until,
             )
             await message.answer(
@@ -87,14 +87,17 @@ async def cmd_mute(message: Message) -> None:
         await set_mute(session, user, until)
         await session.commit()
 
-    await message.chat.restrict(
-        user_id=target.id,
-        permissions={"can_send_messages": False},
-        until_date=until,
-    )
-    await message.answer(
-        f"⏸ @{target.username or target.id} 24 цагийн турш чимээгүй боллоо."
-    )
+    try:
+        await message.chat.restrict(
+            user_id=target.id,
+            permissions=ChatPermissions(can_send_messages=False),
+            until_date=until,
+        )
+        await message.answer(
+            f"⏸ @{target.username or target.id} 24 цагийн турш чимээгүй боллоо."
+        )
+    except Exception:
+        await message.answer("⚠️ Bot-д эрх хүрэлцэхгүй тул mute хийж чадсангүй ⚠️")
 
 
 @router.message(Command("unban"))
@@ -106,8 +109,11 @@ async def cmd_unban(message: Message) -> None:
         return
 
     target = message.reply_to_message.from_user
-    await message.chat.unban(user_id=target.id, only_if_banned=True)
-    await message.answer(f"✅ @{target.username or target.id} ban-ээс чөлөөлөгдлөө.")
+    try:
+        await message.chat.unban(user_id=target.id, only_if_banned=True)
+        await message.answer(f"✅ @{target.username or target.id} ban-ээс чөлөөлөгдлөө.")
+    except Exception:
+        await message.answer("⚠️ Bot-д эрх хүрэлцэхгүй тул unban хийж чадсангүй ⚠️")
 
 
 @router.message(Command("ban"))
@@ -119,6 +125,53 @@ async def cmd_ban(message: Message) -> None:
         return
 
     target = message.reply_to_message.from_user
-    await message.chat.ban(user_id=target.id)
-    await message.answer(f"⛔ @{target.username or target.id} группээс бан хийгдлээ.")
+    try:
+        await message.chat.ban(user_id=target.id)
+        await message.answer(f"⛔ @{target.username or target.id} группээс бан хийгдлээ.")
+    except Exception:
+        await message.answer("⚠️ Bot-д эрх хүрэлцэхгүй тул ban хийж чадсангүй ⚠️")
+
+
+@router.message(Command("verify"))
+async def cmd_verify(message: Message) -> None:
+    if not _is_admin(message):
+        return
+    if not message.reply_to_message or not message.reply_to_message.from_user:
+        await message.answer("✅ Verify хийх хэрэглэгч дээр reply хийгээд /verify гэж бичнэ үү.")
+        return
+    target = message.reply_to_message.from_user
+    async with SessionLocal() as session:
+        user = await get_or_create_user(
+            session,
+            telegram_id=target.id,
+            username=target.username,
+            first_name=target.first_name,
+            last_name=target.last_name,
+        )
+        user.manual_badge_override = "Verified"
+        user.verified = True
+        await session.commit()
+    await message.answer(f"✅ @{target.username or target.id} хэрэглэгчийг verify болголоо.")
+
+
+@router.message(Command("unverify"))
+async def cmd_unverify(message: Message) -> None:
+    if not _is_admin(message):
+        return
+    if not message.reply_to_message or not message.reply_to_message.from_user:
+        await message.answer("✅ Unverify хийх хэрэглэгч дээр reply хийгээд /unverify гэж бичнэ үү.")
+        return
+    target = message.reply_to_message.from_user
+    async with SessionLocal() as session:
+        user = await get_or_create_user(
+            session,
+            telegram_id=target.id,
+            username=target.username,
+            first_name=target.first_name,
+            last_name=target.last_name,
+        )
+        user.manual_badge_override = None
+        user.verified = False
+        await session.commit()
+    await message.answer(f"✅ @{target.username or target.id} хэрэглэгчийн verify-г цуцаллаа.")
 
