@@ -33,9 +33,9 @@ async def cmd_menu(message: Message) -> None:
                 delay_seconds=15,
             )
             return
-        sent = await message.answer(
+        sent = await message.reply(
             "✅ Цэс нээгдлээ. Доорх товчийг ашиглана уу ✅",
-            reply_markup=main_menu_keyboard(selective=True),
+            reply_markup=main_menu_keyboard(selective=False),
         )
         schedule_delete_message(
             message.bot,

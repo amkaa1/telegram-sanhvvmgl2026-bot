@@ -28,7 +28,7 @@ async def cmd_bad(message: Message) -> None:
 
 @router.message(
     F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}),
-    F.text.in_({"🔥 Good", "👍 good"}),
+    F.text.in_({"👍 good", "🔥 Good", "🔥 good"}),
 )
 async def menu_good(message: Message) -> None:
     pseudo = message.model_copy(update={"text": "/good"})
@@ -37,7 +37,7 @@ async def menu_good(message: Message) -> None:
 
 @router.message(
     F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}),
-    F.text.in_({"❌ Bad", "👎 bad"}),
+    F.text.in_({"👎 bad", "❌ Bad", "❌ bad"}),
 )
 async def menu_bad(message: Message) -> None:
     pseudo = message.model_copy(update={"text": "/bad"})
@@ -46,7 +46,7 @@ async def menu_bad(message: Message) -> None:
 
 @router.message(
     F.chat.type == ChatType.PRIVATE,
-    F.text.in_({"🔥 Good", "👍 good"}),
+    F.text.in_({"👍 good", "🔥 Good", "🔥 good"}),
 )
 async def private_stale_menu_good(message: Message) -> None:
     # Users may still have an old reply keyboard cached in private chat.
@@ -56,7 +56,7 @@ async def private_stale_menu_good(message: Message) -> None:
 
 @router.message(
     F.chat.type == ChatType.PRIVATE,
-    F.text.in_({"❌ Bad", "👎 bad"}),
+    F.text.in_({"👎 bad", "❌ Bad", "❌ bad"}),
 )
 async def private_stale_menu_bad(message: Message) -> None:
     # Users may still have an old reply keyboard cached in private chat.
