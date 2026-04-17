@@ -172,7 +172,7 @@ async def cmd_report(message: Message, state: FSMContext) -> None:
 
 @router.message(
     F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}),
-    F.text.in_({"🚨 Report", "⚠️ Report"}),
+    F.text.in_({"⚠️ Report", "🚨 Report"}),
 )
 async def menu_report(message: Message, state: FSMContext) -> None:
     pseudo = message.model_copy(update={"text": "/report"})
@@ -181,7 +181,7 @@ async def menu_report(message: Message, state: FSMContext) -> None:
 
 @router.message(
     F.chat.type == ChatType.PRIVATE,
-    F.text.in_({"🚨 Report", "⚠️ Report"}),
+    F.text.in_({"⚠️ Report", "🚨 Report"}),
 )
 async def private_stale_menu_report(message: Message, state: FSMContext) -> None:
     # Handles old cached private reply keyboards without silent failure.
