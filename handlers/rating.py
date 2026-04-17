@@ -1,7 +1,7 @@
 from aiogram import F, Router
 from aiogram.enums import ChatType
 from aiogram.filters import Command
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove
 
 from database.db import SessionLocal
 from database.queries import undo_rating_by_token
@@ -26,14 +26,40 @@ async def cmd_bad(message: Message) -> None:
     await handle_rating(message, positive=False)
 
 
-@router.message(F.text == "👍 good")
+@router.message(
+    F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}),
+    F.text.in_({"🔥 Good", "👍 good"}),
+)
 async def menu_good(message: Message) -> None:
     pseudo = message.model_copy(update={"text": "/good"})
     await handle_rating(pseudo, positive=True)
 
 
-@router.message(F.text == "👎 bad")
+@router.message(
+    F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}),
+    F.text.in_({"❌ Bad", "👎 bad"}),
+)
 async def menu_bad(message: Message) -> None:
+    pseudo = message.model_copy(update={"text": "/bad"})
+    await handle_rating(pseudo, positive=False)
+
+
+@router.message(
+    F.chat.type == ChatType.PRIVATE,
+    F.text.in_({"🔥 Good", "👍 good"}),
+)
+async def private_stale_menu_good(message: Message) -> None:
+    # Users may still have an old reply keyboard cached in private chat.
+    pseudo = message.model_copy(update={"text": "/good"})
+    await handle_rating(pseudo, positive=True)
+
+
+@router.message(
+    F.chat.type == ChatType.PRIVATE,
+    F.text.in_({"❌ Bad", "👎 bad"}),
+)
+async def private_stale_menu_bad(message: Message) -> None:
+    # Users may still have an old reply keyboard cached in private chat.
     pseudo = message.model_copy(update={"text": "/bad"})
     await handle_rating(pseudo, positive=False)
 
@@ -78,11 +104,18 @@ async def handle_rating(message: Message, *, positive: bool) -> None:
             await message.answer(err)
         return
     if target is None:
-        usage = "⚠️ Хэрэглэгч дээр reply хийгээд эсвэл /good @username, /bad @username ашиглана уу ⚠️"
         if message.chat.type in {ChatType.GROUP, ChatType.SUPERGROUP}:
-            await send_temp_message(message, usage, ttl_seconds=10)
+            warning_text = (
+                "⚠️ good үнэлгээ өгөх бол тухайн хэрэглэгчийн мессеж дээр reply хийгээрэй ⚠️"
+                if positive
+                else "⚠️ bad үнэлгээ өгөх бол тухайн хэрэглэгчийн мессеж дээр reply хийгээрэй ⚠️"
+            )
+            await send_temp_message(message, warning_text, ttl_seconds=10)
         else:
-            await message.answer(usage)
+            await message.answer(
+                "⚠️ Хэрэглэгч дээр reply хийгээд эсвэл /good @username, /bad @username ашиглана уу ⚠️",
+                reply_markup=ReplyKeyboardRemove(),
+            )
         return
 
     async with SessionLocal() as session:
@@ -97,7 +130,7 @@ async def handle_rating(message: Message, *, positive: bool) -> None:
 
     if message.chat.type == ChatType.PRIVATE:
         if not result.ok:
-            await message.answer(result.group_line)
+            await message.answer(result.group_line, reply_markup=ReplyKeyboardRemove())
             return
         await message.answer(
             result.dm_line or result.group_line,

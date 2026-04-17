@@ -2,7 +2,7 @@ from aiogram import F, Router
 from aiogram.enums import ChatType
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command, CommandStart
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings
@@ -10,6 +10,7 @@ from database.db import SessionLocal
 from database.queries import get_or_create_user, mark_bot_private_started, set_referrer_if_empty
 from keyboards.inline import (
     CALLBACK_START_BACK,
+    CALLBACK_START_CLOSE,
     CALLBACK_START_CMDS,
     CALLBACK_START_INVITE,
     CALLBACK_START_REWARD,
@@ -19,7 +20,6 @@ from keyboards.inline import (
     start_info_inline_keyboard,
 )
 from keyboards.menu import open_bot_private_keyboard
-from keyboards.reply import main_menu_keyboard
 from services.invite_tracker import parse_start_referral_payload
 from utils.messaging import notice_callback_expired
 from utils.start_sections import (
@@ -40,10 +40,15 @@ _START_SECTION_HANDLERS = {
 }
 
 PRIVATE_WELCOME_HTML = (
+    "✨ SanhvvMGL2026 bot-д тавтай морил.\n"
+    "Эндээс та Group-ийн дүрэм,\n"
+    "trust system,\n"
+    "invite system,\n"
+    "шагнал болон командын тайлбарыг харах боломжтой.\n\n"
     "✅ Bot идэвхжлээ ✅\n\n"
-    "Одоо group дээр:\n"
-    "<code>/menu</code>\n"
-    "гэж бичээд bot-оо ашиглах боломжтой."
+    "📌 Group дээр үндсэн цэсээ нээх бол:\n"
+    "<code>/menu</code>\n\n"
+    "🛡 Хүний тухай үйлдэл хийхдээ тухайн хэрэглэгчийн мессеж дээр reply хийгээд ашиглана уу."
 )
 
 
@@ -85,7 +90,10 @@ async def cmd_start_private(message: Message) -> None:
         PRIVATE_WELCOME_HTML,
         reply_markup=start_info_inline_keyboard(),
     )
-    await message.answer("Үндсэн цэс:", reply_markup=main_menu_keyboard())
+    await message.answer(
+        "ℹ️ Мэдээллийн цэсийг дээрх inline товчуудаас сонгоно уу.",
+        reply_markup=ReplyKeyboardRemove(),
+    )
 
     if referral_outcome == "saved":
         ref_text = (
@@ -117,6 +125,19 @@ async def on_start_back_callback(call: CallbackQuery) -> None:
             PRIVATE_WELCOME_HTML,
             reply_markup=start_info_inline_keyboard(),
         )
+    except TelegramBadRequest as exc:
+        if "message is not modified" in str(exc).lower():
+            return
+        await call.answer(notice_callback_expired(), show_alert=True)
+
+
+@router.callback_query(F.data == CALLBACK_START_CLOSE)
+async def on_start_close_callback(call: CallbackQuery) -> None:
+    if call.message is None:
+        return
+    await call.answer()
+    try:
+        await call.message.edit_reply_markup(reply_markup=None)
     except TelegramBadRequest as exc:
         if "message is not modified" in str(exc).lower():
             return
@@ -158,4 +179,7 @@ async def on_start_section_callback(call: CallbackQuery) -> None:
 
 @router.message(Command("help"))
 async def cmd_help(message: Message) -> None:
+    if message.chat.type == ChatType.PRIVATE:
+        await message.answer(help_full_text(), reply_markup=ReplyKeyboardRemove())
+        return
     await message.answer(help_full_text())

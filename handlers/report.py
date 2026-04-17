@@ -5,7 +5,7 @@ from aiogram.enums import ChatType
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import CallbackQuery, ChatPermissions, Message, User as TgUser
+from aiogram.types import CallbackQuery, ChatPermissions, Message, ReplyKeyboardRemove, User as TgUser
 
 from config import settings
 from database.db import SessionLocal
@@ -148,11 +148,14 @@ async def cmd_report(message: Message, state: FSMContext) -> None:
         if message.chat.type in {ChatType.GROUP, ChatType.SUPERGROUP}:
             await send_temp_message(
                 message,
-                "⚠️ Report хийх бол эхлээд тухайн хэрэглэгчийн мессеж дээр reply хийгээрэй ⚠️",
+                "⚠️ Report хийх бол тухайн хэрэглэгчийн мессеж дээр reply хийгээрэй ⚠️",
                 ttl_seconds=10,
             )
         else:
-            await message.answer("⚠️ Report хийх хэрэглэгчээ /report @username гэж заана уу ⚠️")
+            await message.answer(
+                "⚠️ Report хийх хэрэглэгчээ /report @username гэж заана уу ⚠️",
+                reply_markup=ReplyKeyboardRemove(),
+            )
         return
     if target.is_bot or target.id == message.from_user.id:
         await message.answer("⚠️ Энэ хэрэглэгч дээр report үүсгэх боломжгүй ⚠️")
@@ -167,8 +170,21 @@ async def cmd_report(message: Message, state: FSMContext) -> None:
     await _start_report_dm(message, state=state, target=target)
 
 
-@router.message(F.text == "⚠️ Report")
+@router.message(
+    F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}),
+    F.text.in_({"🚨 Report", "⚠️ Report"}),
+)
 async def menu_report(message: Message, state: FSMContext) -> None:
+    pseudo = message.model_copy(update={"text": "/report"})
+    await cmd_report(pseudo, state)
+
+
+@router.message(
+    F.chat.type == ChatType.PRIVATE,
+    F.text.in_({"🚨 Report", "⚠️ Report"}),
+)
+async def private_stale_menu_report(message: Message, state: FSMContext) -> None:
+    # Handles old cached private reply keyboards without silent failure.
     pseudo = message.model_copy(update={"text": "/report"})
     await cmd_report(pseudo, state)
 

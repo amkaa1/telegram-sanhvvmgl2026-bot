@@ -37,7 +37,7 @@ async def format_profile_text(session: AsyncSession, user: User) -> str:
             f"🔗 Username: {escape(_username_text(user))}",
             "━━━━━━━━━━━━━━━",
             f"🏷 Badge: {escape(badge)}",
-            f"✅ Trust Level: {trust_level}",
+            f"📈 Trust оноо: {trust_level}",
             f"👍 Good: {user.reputation_positive}",
             f"👎 Bad: {user.reputation_negative}",
             f"⚠️ Reports: {approved_reports}",
