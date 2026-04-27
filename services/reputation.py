@@ -14,6 +14,7 @@ from database.queries import (
     get_rating_cooldown_remaining,
 )
 from database.models import User
+from utils.logger import logger
 
 
 TRUST_LEVELS = [
@@ -101,6 +102,19 @@ async def rate_user(
     *,
     source_message: Message | None = None,
 ) -> RatingResult:
+    action = "good" if positive else "bad"
+    actor_id = from_tg.id
+    target_id = to_tg.id
+    callback_data = (
+        f"menu:{action}:{target_id}" if source_message is not None else f"direct:{action}:{target_id}"
+    )
+    logger.info(
+        "rating_service_start actor_id=%s target_user_id=%s action=%s callback_data=%s",
+        actor_id,
+        target_id,
+        action,
+        callback_data,
+    )
     from_user = await ensure_user(session, from_tg)
     to_user = await ensure_user(session, to_tg)
     label = get_user_display_label(to_tg)
@@ -115,33 +129,54 @@ async def rate_user(
 
     recent_count = await count_recent_ratings(session, actor_user_id=from_user.id, hours=24)
     if recent_count >= RATING_DAILY_LIMIT:
-        remaining = await get_rating_cooldown_remaining(session, actor_user_id=from_user.id)
-        remaining_text = format_remaining_time(
-            int(remaining.total_seconds()) if remaining else 0
-        )
+        await get_rating_cooldown_remaining(session, actor_user_id=from_user.id)
         return RatingResult(
             ok=False,
-            group_line=(
-                "⏳ Та өнөөдрийн rating limit-дээ хүрсэн байна ⏳\n"
-                f"Дахин үнэлгээ өгөх боломж: {remaining_text}"
-            ),
+            group_line="⚠️ Та түр хүлээгээд дахин оролдоно уу.",
             dm_line=None,
         )
 
     source_chat_type = source_message.chat.type if source_message and source_message.chat else None
     source_chat_id = source_message.chat.id if source_message and source_message.chat else None
     source_message_id = source_message.message_id if source_message else None
-    rating = await add_rating(
-        session,
-        from_user,
-        to_user,
-        positive,
-        source_chat_type=source_chat_type,
-        source_chat_id=source_chat_id,
-        source_message_id=source_message_id,
+    logger.info(
+        "rating_service_db_operation_start actor_id=%s target_user_id=%s action=%s callback_data=%s",
+        actor_id,
+        target_id,
+        action,
+        callback_data,
     )
+    try:
+        rating = await add_rating(
+            session,
+            from_user,
+            to_user,
+            positive,
+            source_chat_type=source_chat_type,
+            source_chat_id=source_chat_id,
+            source_message_id=source_message_id,
+        )
+    except Exception:
+        logger.exception(
+            "rating_service_db_operation_failed actor_id=%s target_user_id=%s action=%s callback_data=%s",
+            actor_id,
+            target_id,
+            action,
+            callback_data,
+        )
+        raise
     if rating is None:
-        return RatingResult(ok=False, group_line="Системийн алдаа гарлаа.", dm_line=None)
+        logger.warning(
+            "rating_service_duplicate_or_invalid actor_id=%s target_user_id=%s action=%s",
+            actor_id,
+            target_id,
+            action,
+        )
+        return RatingResult(
+            ok=False,
+            group_line="⚠️ Та түр хүлээгээд дахин оролдоно уу.",
+            dm_line=None,
+        )
     if to_user.manual_badge_override:
         to_user.verified = True
     else:
@@ -152,6 +187,13 @@ async def rate_user(
         actor_telegram_id=from_tg.id,
     )
     await session.commit()
+    logger.info(
+        "rating_service_db_operation_success actor_id=%s target_user_id=%s action=%s rating_id=%s",
+        actor_id,
+        target_id,
+        action,
+        rating.id,
+    )
 
     group_line = f"✅ {label}-д {rate_word} үнэлгээг бүртгэлээ ✅"
     dm_line = f"✅ Та {label}-д {rate_word} үнэлгээ өглөө ✅"

@@ -198,8 +198,10 @@ async def undo_rating_callback(call: CallbackQuery) -> None:
 async def inline_rate_callback(call: CallbackQuery) -> None:
     if call.from_user is None or call.data is None:
         return
+    actor_id = call.from_user.id
+    callback_data = call.data
     try:
-        parts = call.data.split(":")
+        parts = callback_data.split(":")
         if len(parts) != 3:
             await call.answer("⚠️ Энэ үйлдэл хүчингүй байна.", show_alert=True)
             return
@@ -211,7 +213,7 @@ async def inline_rate_callback(call: CallbackQuery) -> None:
         if target_id <= 0:
             await call.answer("⚠️ Энэ үйлдэл хүчингүй байна.", show_alert=True)
             return
-        if target_id == call.from_user.id:
+        if target_id == actor_id:
             await call.answer("⚠️ Өөртөө үнэлгээ өгөх боломжгүй.", show_alert=True)
             return
         if call.message is None:
@@ -219,44 +221,84 @@ async def inline_rate_callback(call: CallbackQuery) -> None:
             return
 
         positive = action == "good"
+        logger.info(
+            "menu_rating_callback_start actor_id=%s target_user_id=%s action=%s callback_data=%s",
+            actor_id,
+            target_id,
+            action,
+            callback_data,
+        )
         async with SessionLocal() as session:
-            await ensure_user_registered(session, call.from_user)
-            target_db = await get_user_by_telegram_id(session, target_id)
-            target_user: TgUser | None = None
-            if target_db is not None:
-                target_user = TgUser(
-                    id=target_db.telegram_id,
-                    is_bot=target_db.is_bot,
-                    first_name=target_db.first_name or "",
-                    last_name=target_db.last_name,
-                    username=target_db.username,
+            try:
+                await ensure_user_registered(session, call.from_user)
+                target_db = await get_user_by_telegram_id(session, target_id)
+                target_user: TgUser | None = None
+                if target_db is not None:
+                    target_user = TgUser(
+                        id=target_db.telegram_id,
+                        is_bot=target_db.is_bot,
+                        first_name=target_db.first_name or "",
+                        last_name=target_db.last_name,
+                        username=target_db.username,
+                    )
+                if target_user is None:
+                    # callback_data already has trusted target id from menu creation;
+                    # username is optional for rating persistence.
+                    target_user = TgUser(
+                        id=target_id,
+                        is_bot=False,
+                        first_name=(target_db.first_name if target_db else "") or "Хэрэглэгч",
+                        last_name=target_db.last_name if target_db else None,
+                        username=target_db.username if target_db else None,
+                    )
+                if target_user.is_bot:
+                    await session.commit()
+                    await call.answer("⚠️ Энэ хэрэглэгч дээр үйлдэл хийх боломжгүй.", show_alert=True)
+                    return
+                logger.info(
+                    "menu_rating_db_operation_start actor_id=%s target_user_id=%s action=%s callback_data=%s",
+                    actor_id,
+                    target_id,
+                    action,
+                    callback_data,
                 )
-            if target_user is None and call.message.chat.type in {ChatType.GROUP, ChatType.SUPERGROUP}:
-                try:
-                    member = await call.bot.get_chat_member(call.message.chat.id, target_id)
-                    target_user = member.user
-                except Exception:
-                    target_user = None
-            if target_user is None:
-                await session.commit()
-                await call.answer("⚠️ Энэ хэрэглэгч дээр үйлдэл хийх боломжгүй.", show_alert=True)
-                return
-            if target_user.is_bot:
-                await session.commit()
-                await call.answer("⚠️ Энэ хэрэглэгч дээр үйлдэл хийх боломжгүй.", show_alert=True)
-                return
-            result = await rate_user(
-                session,
-                call.from_user,
-                target_user,
-                positive=positive,
-                source_message=call.message,
-            )
+                result = await rate_user(
+                    session,
+                    call.from_user,
+                    target_user,
+                    positive=positive,
+                    source_message=call.message,
+                )
+                logger.info(
+                    "menu_rating_db_operation_success actor_id=%s target_user_id=%s action=%s ok=%s",
+                    actor_id,
+                    target_id,
+                    action,
+                    result.ok,
+                )
+            except Exception:
+                await session.rollback()
+                logger.exception(
+                    "menu_rating_db_operation_failed actor_id=%s target_user_id=%s action=%s callback_data=%s",
+                    actor_id,
+                    target_id,
+                    action,
+                    callback_data,
+                )
+                raise
 
         if result.ok:
-            await call.answer("✅ Дэмжлэг бүртгэгдлээ." if positive else "✅ Сэрэмжлүүлэг бүртгэгдлээ.")
+            await call.answer(
+                "✅ Дэмжлэг бүртгэгдлээ."
+                if positive
+                else "⚠️ Сэрэмжлүүлэг бүртгэгдлээ."
+            )
             return
         await call.answer(result.group_line, show_alert=True)
     except Exception:
-        logger.exception("menu rating callback failed data=%s actor_id=%s", call.data, call.from_user.id)
+        logger.exception(
+            "menu rating callback failed data=%s actor_id=%s",
+            callback_data,
+            actor_id,
+        )
         await call.answer("⚠️ Алдаа гарлаа. Дахин оролдоно уу.", show_alert=True)

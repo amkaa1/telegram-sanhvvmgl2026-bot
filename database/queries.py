@@ -126,11 +126,29 @@ async def add_rating(
         source_message_id=source_message_id,
     )
     session.add(rating)
-    if is_positive:
-        to_user.reputation_positive += 1
-    else:
-        to_user.reputation_negative += 1
-    await session.flush()
+    try:
+        if is_positive:
+            to_user.reputation_positive += 1
+        else:
+            to_user.reputation_negative += 1
+        await session.flush()
+    except IntegrityError:
+        await session.rollback()
+        logger.exception(
+            "add_rating integrity_error actor_user_id=%s target_user_id=%s action=%s",
+            from_user.id,
+            to_user.id,
+            "good" if is_positive else "bad",
+        )
+        return None
+    except Exception:
+        logger.exception(
+            "add_rating failed actor_user_id=%s target_user_id=%s action=%s",
+            from_user.id,
+            to_user.id,
+            "good" if is_positive else "bad",
+        )
+        raise
     return rating
 
 
