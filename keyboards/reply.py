@@ -1,7 +1,7 @@
 from aiogram.types import KeyboardButton, ReplyKeyboardMarkup
 
 REPLY_BTN_PROFILE = "👤 Profile"
-                                                                                                                                                                                                                                                                                        REPLY_BTN_REPORT = "⚠️ Report"
+REPLY_BTN_REPORT = "⚠️ Report"
 REPLY_BTN_GOOD = "👍 Good"
 REPLY_BTN_BAD = "👎 Bad"
 REPLY_BTN_MENU = "📋 Menu"

@@ -4,8 +4,9 @@ from aiogram.filters import Command
 from aiogram.types import Message, ReplyKeyboardRemove
 
 from database.db import SessionLocal
+from keyboards.inline import group_target_menu_keyboard
 from keyboards.menu import open_bot_private_keyboard
-from keyboards.reply import REPLY_BTN_MENU, main_menu_keyboard
+from keyboards.reply import REPLY_BTN_MENU
 from services.temp_message_service import schedule_delete_message
 from services.user_registry import has_private_started
 from utils.logger import logger
@@ -44,6 +45,7 @@ async def handle_menu_request(message: Message) -> None:
             return
 
         target = message.reply_to_message.from_user if message.reply_to_message else None
+        target_id = target.id if target else 0
         if target and target.is_bot:
             sent = await message.reply("⚠️ Энэ хэрэглэгч дээр үйлдэл хийх боломжгүй.")
             schedule_delete_message(
@@ -55,14 +57,14 @@ async def handle_menu_request(message: Message) -> None:
             return
         try:
             sent = await message.reply(
-                "✅ Menu нээгдлээ үйлдлээ сонгоно уу.",
-                reply_markup=main_menu_keyboard(selective=True),
+                "✅ Цэс нээгдлээ. Доорх товчоос сонгоно уу.",
+                reply_markup=group_target_menu_keyboard(target_id),
             )
             schedule_delete_message(
                 message.bot,
                 chat_id=sent.chat.id,
                 message_id=sent.message_id,
-                delay_seconds=10,
+                delay_seconds=25,
             )
         except Exception:
             logger.exception("menu open failed actor_id=%s", message.from_user.id)

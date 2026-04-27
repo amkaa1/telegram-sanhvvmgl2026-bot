@@ -215,7 +215,7 @@ async def inline_report_start_callback(call: CallbackQuery, state: FSMContext) -
             return
         target_id = int(raw_target_id)
         if target_id <= 0:
-            await call.answer("⚠️ Энэ үйлдэл хүчингүй байна.", show_alert=True)
+            await call.answer("⚠️ Эхлээд тухайн хүний пост дээр reply хийж /menu дарна уу.", show_alert=True)
             return
         if target_id == call.from_user.id:
             await call.answer("⚠️ Өөр дээрээ энэ үйлдлийг хийх боломжгүй.", show_alert=True)
@@ -243,6 +243,29 @@ async def inline_report_start_callback(call: CallbackQuery, state: FSMContext) -
     except Exception:
         logger.exception("menu report callback failed data=%s actor_id=%s", call.data, call.from_user.id)
         await call.answer("⚠️ Алдаа гарлаа. Дахин оролдоно уу.", show_alert=True)
+
+
+@router.callback_query(F.data.startswith("menu:"))
+async def menu_callback_fallback(call: CallbackQuery) -> None:
+    if call.data is None:
+        await call.answer("⚠️ Button callback алдаатай байна. /menu дахин дарна уу.", show_alert=True)
+        return
+    try:
+        parts = call.data.split(":")
+        is_valid = (
+            len(parts) == 3
+            and parts[0] == "menu"
+            and parts[1] in {"good", "bad", "profile", "report"}
+            and parts[2].isdigit()
+        )
+        if is_valid:
+            # already handled by concrete callback handlers
+            return
+        logger.warning("menu callback malformed data=%s actor_id=%s", call.data, call.from_user.id if call.from_user else None)
+        await call.answer("⚠️ Button callback алдаатай байна. /menu дахин дарна уу.", show_alert=True)
+    except Exception:
+        logger.exception("menu callback fallback failed data=%s", call.data)
+        await call.answer("⚠️ Түр алдаа гарлаа. Дахин оролдоно уу.", show_alert=True)
 
 
 @router.callback_query(F.data.startswith("report_reason:"))
