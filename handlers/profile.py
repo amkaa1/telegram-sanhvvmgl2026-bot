@@ -8,6 +8,7 @@ from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove
 from database.db import SessionLocal
 from database.queries import get_or_create_user, get_user_by_telegram_id
 from keyboards.menu import open_bot_private_keyboard
+from keyboards.reply import REPLY_BTN_PROFILE
 from services.profile_service import format_profile_text
 from services.temp_message_service import schedule_delete_message, send_temp_message
 from services.user_registry import ensure_user_registered, has_private_started
@@ -111,19 +112,40 @@ async def cmd_profile(message: Message) -> None:
 
 @router.message(
     F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}),
-    F.text.in_({"👤 Profile"}),
+    F.text == REPLY_BTN_PROFILE,
 )
 async def menu_profile(message: Message) -> None:
-    await send_temp_message(
-        message,
-        "⚠️ Хуучин keyboard хүчингүй болсон. Хэрэглэгчийн мессеж дээр reply хийгээд /menu ашиглана уу ⚠️",
-        ttl_seconds=10,
+    if message.from_user is None:
+        return
+    if not await _ensure_group_activation(message):
+        return
+    target_tg = message.reply_to_message.from_user if message.reply_to_message else message.from_user
+    if target_tg is None or target_tg.is_bot:
+        await send_temp_message(message, "⚠️ Энэ хэрэглэгч дээр үйлдэл хийх боломжгүй.", ttl_seconds=10)
+        return
+    async with SessionLocal() as session:
+        await ensure_user_registered(session, message.from_user)
+        target_user = await get_or_create_user(
+            session,
+            telegram_id=target_tg.id,
+            username=target_tg.username,
+            first_name=target_tg.first_name,
+            last_name=target_tg.last_name,
+        )
+        profile_text = await format_profile_text(session, target_user)
+        await session.commit()
+    sent_msg = await message.answer(profile_text)
+    schedule_delete_message(
+        message.bot,
+        chat_id=sent_msg.chat.id,
+        message_id=sent_msg.message_id,
+        delay_seconds=30 if message.reply_to_message else 5,
     )
 
 
 @router.message(
     F.chat.type == ChatType.PRIVATE,
-    F.text.in_({"👤 Profile"}),
+    F.text == REPLY_BTN_PROFILE,
 )
 async def private_stale_menu_profile(message: Message) -> None:
     await message.answer(

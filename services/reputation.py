@@ -6,7 +6,7 @@ from aiogram.types import User as TgUser
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.queries import (
-    RATING_DAILY_LIMIT,
+    RATING_LIMIT_COUNT,
     add_rating,
     count_recent_ratings,
     create_rating_undo_token,
@@ -90,7 +90,7 @@ async def ensure_user(
 class RatingResult:
     ok: bool
     group_line: str
-    dm_line: str | None
+    dm_line: str | None = None
     undo_token: str | None = None
 
 
@@ -98,8 +98,8 @@ async def rate_user(
     session: AsyncSession,
     from_tg: TgUser,
     to_tg: TgUser,
-    positive: bool,
     *,
+    positive: bool,
     source_message: Message | None = None,
 ) -> RatingResult:
     action = "good" if positive else "bad"
@@ -124,16 +124,19 @@ async def rate_user(
         return RatingResult(
             ok=False,
             group_line="⚠️ Өөрийгөө үнэлэх боломжгүй ⚠️",
-            dm_line=None,
+        )
+    if to_user.is_bot:
+        return RatingResult(
+            ok=False,
+            group_line="⚠️ Энэ хэрэглэгч дээр үйлдэл хийх боломжгүй.",
         )
 
-    recent_count = await count_recent_ratings(session, actor_user_id=from_user.id, hours=24)
-    if recent_count >= RATING_DAILY_LIMIT:
+    recent_count = await count_recent_ratings(session, actor_user_id=from_user.id)
+    if recent_count >= RATING_LIMIT_COUNT:
         await get_rating_cooldown_remaining(session, actor_user_id=from_user.id)
         return RatingResult(
             ok=False,
-            group_line="⚠️ Та түр хүлээгээд дахин оролдоно уу.",
-            dm_line=None,
+            group_line="⚠️ Та 72 цагийн дотор нийт 2 үнэлгээ өгөх боломжтой. Дараа дахин оролдоно уу.",
         )
 
     source_chat_type = source_message.chat.type if source_message and source_message.chat else None
@@ -175,7 +178,6 @@ async def rate_user(
         return RatingResult(
             ok=False,
             group_line="⚠️ Та түр хүлээгээд дахин оролдоно уу.",
-            dm_line=None,
         )
     if to_user.manual_badge_override:
         to_user.verified = True
@@ -195,7 +197,11 @@ async def rate_user(
         rating.id,
     )
 
-    group_line = f"✅ {label}-д {rate_word} үнэлгээг бүртгэлээ ✅"
+    group_line = (
+        f"✅ Good нэмэгдлээ: {label}"
+        if positive
+        else f"⚠️ Bad нэмэгдлээ: {label}"
+    )
     dm_line = f"✅ Та {label}-д {rate_word} үнэлгээ өглөө ✅"
     return RatingResult(ok=True, group_line=group_line, dm_line=dm_line, undo_token=undo.token)
 

@@ -19,12 +19,13 @@ from database.queries import (
     update_report_status,
 )
 from keyboards.menu import open_bot_private_keyboard
+from keyboards.reply import REPLY_BTN_REPORT
 from keyboards.report import (
     admin_report_review_keyboard,
     report_evidence_skip_keyboard,
     report_reason_keyboard,
 )
-from services.temp_message_service import send_temp_message
+from services.temp_message_service import schedule_delete_message, send_temp_message
 from services.user_registry import ensure_user_registered, has_private_started
 from utils.logger import logger
 from utils.messaging import safe_send_dm
@@ -149,7 +150,7 @@ async def cmd_report(message: Message, state: FSMContext) -> None:
         if message.chat.type in {ChatType.GROUP, ChatType.SUPERGROUP}:
             await send_temp_message(
                 message,
-                "⚠️ Report хийх бол тухайн хэрэглэгчийн мессеж дээр reply хийгээрэй ⚠️",
+                "⚠️ Report хийх бол тухайн хэрэглэгчийн мессеж дээр reply хийгээд товчоо дарна уу.",
                 ttl_seconds=10,
             )
         else:
@@ -173,19 +174,21 @@ async def cmd_report(message: Message, state: FSMContext) -> None:
 
 @router.message(
     F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}),
-    F.text.in_({"⚠️ Report", "🚨 Report"}),
+    F.text == REPLY_BTN_REPORT,
 )
 async def menu_report(message: Message, state: FSMContext) -> None:
-    await send_temp_message(
-        message,
-        "⚠️ Хуучин keyboard хүчингүй болсон. Хэрэглэгчийн мессеж дээр reply хийгээд /menu ашиглана уу ⚠️",
-        ttl_seconds=10,
+    await cmd_report(message, state)
+    schedule_delete_message(
+        message.bot,
+        chat_id=message.chat.id,
+        message_id=message.message_id,
+        delay_seconds=10,
     )
 
 
 @router.message(
     F.chat.type == ChatType.PRIVATE,
-    F.text.in_({"⚠️ Report", "🚨 Report"}),
+    F.text == REPLY_BTN_REPORT,
 )
 async def private_stale_menu_report(message: Message) -> None:
     await message.answer(
@@ -215,7 +218,7 @@ async def inline_report_start_callback(call: CallbackQuery, state: FSMContext) -
             await call.answer("⚠️ Энэ үйлдэл хүчингүй байна.", show_alert=True)
             return
         if target_id == call.from_user.id:
-            await call.answer("⚠️ Энэ хэрэглэгч дээр үйлдэл хийх боломжгүй.", show_alert=True)
+            await call.answer("⚠️ Өөр дээрээ энэ үйлдлийг хийх боломжгүй.", show_alert=True)
             return
         if call.message.chat.type not in {ChatType.GROUP, ChatType.SUPERGROUP}:
             await call.answer("⚠️ Энэ үйлдэл хүчингүй байна.", show_alert=True)

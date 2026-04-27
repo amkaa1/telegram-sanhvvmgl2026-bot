@@ -30,31 +30,23 @@ async def cmd_bad(message: Message) -> None:
 
 @router.message(
     F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}),
-    F.text.in_({REPLY_BTN_GOOD, "🔥 Good", "🔥 good"}),
+    F.text == REPLY_BTN_GOOD,
 )
 async def menu_good(message: Message) -> None:
-    await send_temp_message(
-        message,
-        "⚠️ Хуучин keyboard хүчингүй болсон. Хэрэглэгчийн мессеж дээр reply хийгээд /menu ашиглана уу ⚠️",
-        ttl_seconds=10,
-    )
+    await handle_rating(message, positive=True)
 
 
 @router.message(
     F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}),
-    F.text.in_({REPLY_BTN_BAD, "❌ Bad", "❌ bad"}),
+    F.text == REPLY_BTN_BAD,
 )
 async def menu_bad(message: Message) -> None:
-    await send_temp_message(
-        message,
-        "⚠️ Хуучин keyboard хүчингүй болсон. Хэрэглэгчийн мессеж дээр reply хийгээд /menu ашиглана уу ⚠️",
-        ttl_seconds=10,
-    )
+    await handle_rating(message, positive=False)
 
 
 @router.message(
     F.chat.type == ChatType.PRIVATE,
-    F.text.in_({REPLY_BTN_GOOD, "🔥 Good", "🔥 good"}),
+    F.text == REPLY_BTN_GOOD,
 )
 async def private_stale_menu_good(message: Message) -> None:
     await message.answer(
@@ -65,7 +57,7 @@ async def private_stale_menu_good(message: Message) -> None:
 
 @router.message(
     F.chat.type == ChatType.PRIVATE,
-    F.text.in_({REPLY_BTN_BAD, "❌ Bad", "❌ bad"}),
+    F.text == REPLY_BTN_BAD,
 )
 async def private_stale_menu_bad(message: Message) -> None:
     await message.answer(
@@ -102,6 +94,10 @@ async def _ensure_group_activation(message: Message) -> bool:
 async def handle_rating(message: Message, *, positive: bool) -> None:
     if message.from_user is None:
         return
+    from_group_button = (
+        message.chat.type in {ChatType.GROUP, ChatType.SUPERGROUP}
+        and message.text in {REPLY_BTN_GOOD, REPLY_BTN_BAD}
+    )
 
     if not await _ensure_group_activation(message):
         return
@@ -116,11 +112,18 @@ async def handle_rating(message: Message, *, positive: bool) -> None:
     if target is None:
         if message.chat.type in {ChatType.GROUP, ChatType.SUPERGROUP}:
             warning_text = (
-                "⚠️ good үнэлгээ өгөх бол тухайн хэрэглэгчийн мессеж дээр reply хийгээрэй ⚠️"
+                "⚠️ Good өгөх бол тухайн хэрэглэгчийн мессеж дээр reply хийгээд товчоо дарна уу."
                 if positive
-                else "⚠️ bad үнэлгээ өгөх бол тухайн хэрэглэгчийн мессеж дээр reply хийгээрэй ⚠️"
+                else "⚠️ Bad өгөх бол тухайн хэрэглэгчийн мессеж дээр reply хийгээд товчоо дарна уу."
             )
             await send_temp_message(message, warning_text, ttl_seconds=10)
+            if from_group_button:
+                schedule_delete_message(
+                    message.bot,
+                    chat_id=message.chat.id,
+                    message_id=message.message_id,
+                    delay_seconds=10,
+                )
         else:
             await message.answer(
                 "⚠️ Хэрэглэгч дээр reply хийгээд эсвэл /good @username, /bad @username ашиглана уу ⚠️",
@@ -150,6 +153,13 @@ async def handle_rating(message: Message, *, positive: bool) -> None:
 
     if not result.ok:
         await send_temp_message(message, result.group_line, ttl_seconds=10)
+        if from_group_button:
+            schedule_delete_message(
+                message.bot,
+                chat_id=message.chat.id,
+                message_id=message.message_id,
+                delay_seconds=10,
+            )
         return
 
     schedule_delete_message(
