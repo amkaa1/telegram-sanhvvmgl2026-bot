@@ -121,7 +121,7 @@ async def _start_report_dm(
             f"⚠️ Report эхэллээ: {_user_label(target)}\n\n"
             "Шалтгаанаа сонгоно уу:"
         ),
-        reply_markup=report_reason_keyboard(),
+        reply_markup=report_reason_keyboard(target.id),
     )
     if not sent and message.chat.type in {ChatType.GROUP, ChatType.SUPERGROUP}:
         await send_temp_message(
@@ -175,18 +175,64 @@ async def cmd_report(message: Message, state: FSMContext) -> None:
     F.text.in_({"⚠️ Report", "🚨 Report"}),
 )
 async def menu_report(message: Message, state: FSMContext) -> None:
-    pseudo = message.model_copy(update={"text": "/report"})
-    await cmd_report(pseudo, state)
+    await send_temp_message(
+        message,
+        "⚠️ Хуучин keyboard хүчингүй болсон. Хэрэглэгчийн мессеж дээр reply хийгээд /menu ашиглана уу ⚠️",
+        ttl_seconds=10,
+    )
 
 
 @router.message(
     F.chat.type == ChatType.PRIVATE,
     F.text.in_({"⚠️ Report", "🚨 Report"}),
 )
-async def private_stale_menu_report(message: Message, state: FSMContext) -> None:
-    # Handles old cached private reply keyboards without silent failure.
-    pseudo = message.model_copy(update={"text": "/report"})
-    await cmd_report(pseudo, state)
+async def private_stale_menu_report(message: Message) -> None:
+    await message.answer(
+        "⚠️ Энэ товч хуучирсан байна. /report @username эсвэл group дээр reply хийж /menu ашиглана уу ⚠️",
+        reply_markup=ReplyKeyboardRemove(),
+    )
+
+
+@router.callback_query(F.data.regexp(r"^report:start:\d+$"))
+async def inline_report_start_callback(call: CallbackQuery, state: FSMContext) -> None:
+    if call.from_user is None or call.data is None or call.message is None:
+        return
+    parts = call.data.split(":")
+    if len(parts) != 3 or not parts[2].isdigit():
+        await call.answer("⚠️ Буруу callback формат ⚠️", show_alert=True)
+        return
+    target_id = int(parts[2])
+    if target_id <= 0:
+        await call.answer("⚠️ Хэрэглэгчийн ID буруу байна ⚠️", show_alert=True)
+        return
+    if target_id == call.from_user.id:
+        await call.answer("⚠️ Өөрийгөө report хийх боломжгүй ⚠️", show_alert=True)
+        return
+    try:
+        target_chat = await call.bot.get_chat(target_id)
+    except Exception:
+        target_chat = None
+    if target_chat is None:
+        await call.answer("⚠️ Энэ хэрэглэгчийг одоогоор таньж чадсангүй ⚠️", show_alert=True)
+        return
+    if getattr(target_chat, "is_bot", False):
+        await call.answer("⚠️ Bot хэрэглэгч дээр report үүсгэх боломжгүй ⚠️", show_alert=True)
+        return
+    target = TgUser(
+        id=int(target_chat.id),
+        is_bot=False,
+        first_name=getattr(target_chat, "first_name", "") or "",
+        last_name=getattr(target_chat, "last_name", None),
+        username=getattr(target_chat, "username", None),
+    )
+    await _start_report_dm(call.message, state=state, target=target)
+    if call.message.chat.type in {ChatType.GROUP, ChatType.SUPERGROUP}:
+        await send_temp_message(
+            call.message,
+            "⚠️ Report үргэлжлүүлэх зааврыг DM рүү илгээлээ ⚠️",
+            ttl_seconds=10,
+        )
+    await call.answer("✅ DM руу илгээлээ ✅")
 
 
 @router.callback_query(F.data.startswith("report_reason:"))
@@ -196,7 +242,10 @@ async def report_reason_callback(call: CallbackQuery, state: FSMContext) -> None
     if await state.get_state() != ReportFlow.waiting_reason.state:
         await call.answer("Энэ report үйлдэл хүчингүй болсон байна.", show_alert=True)
         return
-    reason = call.data.split(":", maxsplit=1)[1].strip()
+    reason = call.data.split(":", maxsplit=1)[1].strip().lower()
+    if reason not in {"scam", "spam", "fake", "abuse", "other"}:
+        await call.answer("⚠️ Буруу шалтгаан ⚠️", show_alert=True)
+        return
     await state.update_data(reason=reason)
     await state.set_state(ReportFlow.waiting_evidence)
     await call.answer()
@@ -205,6 +254,50 @@ async def report_reason_callback(call: CallbackQuery, state: FSMContext) -> None
             "Нотолгоогоо оруулна уу (текст, зураг, линк, forward). Алгасах бол товч дарна уу.",
             reply_markup=report_evidence_skip_keyboard(),
         )
+
+
+@router.callback_query(F.data.regexp(r"^report:reason:\d+:[a-z]+$"))
+async def report_reason_with_target_callback(call: CallbackQuery, state: FSMContext) -> None:
+    if call.from_user is None or call.data is None or call.message is None:
+        return
+    parts = call.data.split(":")
+    if len(parts) != 4:
+        await call.answer("⚠️ Буруу callback формат ⚠️", show_alert=True)
+        return
+    _, _, raw_target_id, reason = parts
+    if not raw_target_id.isdigit():
+        await call.answer("⚠️ Хэрэглэгчийн ID буруу байна ⚠️", show_alert=True)
+        return
+    target_id = int(raw_target_id)
+    reason = reason.strip().lower()
+    if reason not in {"scam", "spam", "fake", "abuse", "other"}:
+        await call.answer("⚠️ Буруу шалтгаан ⚠️", show_alert=True)
+        return
+    if target_id <= 0 or target_id == call.from_user.id:
+        await call.answer("⚠️ Энэ report үйлдэл хүчингүй байна ⚠️", show_alert=True)
+        return
+
+    try:
+        target_chat = await call.bot.get_chat(target_id)
+    except Exception:
+        target_chat = None
+    if target_chat is None or getattr(target_chat, "is_bot", False):
+        await call.answer("⚠️ Энэ хэрэглэгчийг одоогоор таньж чадсангүй ⚠️", show_alert=True)
+        return
+
+    await state.set_state(ReportFlow.waiting_evidence)
+    await state.update_data(
+        target_user_id=target_id,
+        target_username=getattr(target_chat, "username", None),
+        target_first_name=getattr(target_chat, "first_name", "") or "",
+        target_last_name=getattr(target_chat, "last_name", None),
+        reason=reason,
+    )
+    await call.answer("✅ Шалтгаан сонгогдлоо ✅")
+    await call.message.answer(
+        "Нотолгоогоо оруулна уу (текст, зураг, линк, forward). Алгасах бол товч дарна уу.",
+        reply_markup=report_evidence_skip_keyboard(),
+    )
 
 
 @router.callback_query(F.data == "report_evidence:skip")

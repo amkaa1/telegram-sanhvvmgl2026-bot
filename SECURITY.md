@@ -1,21 +1,16 @@
 # Security Policy
 
-## Supported Versions
+## Sensitive Credentials
 
-Use this section to tell people about which versions of your project are
-currently being supported with security updates.
+- `BOT_TOKEN`, `DATABASE_URL`, `ADMIN_IDS`, `GROUP_ID` зэрэг бүх нууц утгыг зөвхөн Railway Variables эсвэл локал `.env` дотор хадгална.
+- Код, commit message, screenshot, log файлд нууц утга оруулахгүй.
+- Хэрэв нууц утга репод орсон бол тэр даруй rotate хийнэ.
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 5.1.x   | :white_check_mark: |
-| 5.0.x   | :x:                |
-| 4.0.x   | :white_check_mark: |
-| < 4.0   | :x:                |
+## Required Manual Action
 
-## Reporting a Vulnerability
+- Энэ төслийн өмнөх хувилбарт Railway PostgreSQL connection string ил гарсан тул Railway дээр PostgreSQL password-аа заавал rotate хийнэ үү.
+- Rotate хийсний дараа Railway `DATABASE_URL` болон локал `.env` утгаа шинэчилж deploy хийнэ.
 
-Use this section to tell people how to report a vulnerability.
+## Reporting
 
-Tell them where to go, how often they can expect to get an update on a
-reported vulnerability, what to expect if the vulnerability is accepted or
-declined, etc.
+Эмзэг байдал илэрвэл repo owner-т шууд private байдлаар мэдээлнэ үү.

@@ -16,6 +16,7 @@ Production-ready Telegram group bot (aiogram v3 + PostgreSQL + async SQLAlchemy)
 - `GROUP_ID`: target group chat id (`-100...`)
 - `ADMIN_IDS`: comma-separated telegram ids
 - `DATABASE_URL`: Railway PostgreSQL URL (`postgresql://...`)
+- `GROUP_INVITE_LINK`: optional group join link (`https://t.me/+...`)
 - `LOG_LEVEL`: `INFO` / `WARNING` / `DEBUG`
 
 `DATABASE_URL` автоматаар `postgresql+asyncpg://` хэлбэрт хөрвөнө.
@@ -37,3 +38,7 @@ Production-ready Telegram group bot (aiogram v3 + PostgreSQL + async SQLAlchemy)
 - Rating: 72 цагт нийт 2 үнэлгээ.
 - Verified: auto + manual тусдаа хадгалагдана.
 - Reward threshold бүр нэг удаа л trigger хийнэ.
+
+## Security
+- Репод өмнө нь Railway PostgreSQL нууц мэдээлэл орсон байж болзошгүй тул Railway дээр DB password-аа заавал rotate хийнэ үү.
+- Rotate хийсний дараа шинэ `DATABASE_URL`-аа Railway Variables болон локал `.env` дээр шинэчилнэ.
