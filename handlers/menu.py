@@ -1,18 +1,19 @@
-from aiogram import Router
+from aiogram import F, Router
 from aiogram.enums import ChatType
 from aiogram.filters import Command
 from aiogram.types import Message, ReplyKeyboardRemove
 
 from database.db import SessionLocal
-from keyboards.inline import group_target_menu_keyboard
 from keyboards.menu import open_bot_private_keyboard
+from keyboards.reply import REPLY_BTN_MENU, main_menu_keyboard
 from services.temp_message_service import schedule_delete_message
 from services.user_registry import has_private_started
+from utils.logger import logger
 
 router = Router()
 
-@router.message(Command("menu"))
-async def cmd_menu(message: Message) -> None:
+
+async def handle_menu_request(message: Message) -> None:
     if message.from_user is None:
         return
     if message.chat.type in {ChatType.GROUP, ChatType.SUPERGROUP}:
@@ -31,39 +32,62 @@ async def cmd_menu(message: Message) -> None:
                 delay_seconds=15,
             )
             return
+
+        if message.reply_to_message and message.reply_to_message.from_user is None:
+            sent = await message.reply("⚠️ Энэ хэрэглэгч дээр үйлдэл хийх боломжгүй.")
+            schedule_delete_message(
+                message.bot,
+                chat_id=sent.chat.id,
+                message_id=sent.message_id,
+                delay_seconds=5,
+            )
+            return
+
         target = message.reply_to_message.from_user if message.reply_to_message else None
-        if target is None:
+        if target and target.is_bot:
+            sent = await message.reply("⚠️ Энэ хэрэглэгч дээр үйлдэл хийх боломжгүй.")
+            schedule_delete_message(
+                message.bot,
+                chat_id=sent.chat.id,
+                message_id=sent.message_id,
+                delay_seconds=5,
+            )
+            return
+        try:
             sent = await message.reply(
-                "⚠️ /menu ашиглахдаа тухайн хэрэглэгчийн мессеж дээр reply хийгээд ажиллуулна уу ⚠️"
+                "✅ Menu нээгдлээ үйлдлээ сонгоно уу.",
+                reply_markup=main_menu_keyboard(selective=True),
             )
             schedule_delete_message(
                 message.bot,
                 chat_id=sent.chat.id,
                 message_id=sent.message_id,
-                delay_seconds=12,
+                delay_seconds=10,
             )
-            return
-        if target.is_bot:
-            sent = await message.reply("⚠️ Bot хэрэглэгч дээр энэ цэсийг ашиглах боломжгүй ⚠️")
+        except Exception:
+            logger.exception("menu open failed actor_id=%s", message.from_user.id)
+            sent = await message.reply("⚠️ Алдаа гарлаа. Дахин оролдоно уу.")
             schedule_delete_message(
                 message.bot,
                 chat_id=sent.chat.id,
                 message_id=sent.message_id,
-                delay_seconds=12,
+                delay_seconds=5,
             )
-            return
-        sent = await message.reply(
-            "✅ Түр цэс нээгдлээ. Доорх товчуудаас сонгоно уу ✅",
-            reply_markup=group_target_menu_keyboard(target.id),
-        )
-        schedule_delete_message(
-            message.bot,
-            chat_id=sent.chat.id,
-            message_id=sent.message_id,
-            delay_seconds=25,
-        )
         return
     await message.answer(
         "Group дээр /menu гэж бичээд ашиглах боломжтой .",
         reply_markup=ReplyKeyboardRemove(),
     )
+
+
+@router.message(Command("menu"))
+async def cmd_menu(message: Message) -> None:
+    await handle_menu_request(message)
+
+
+@router.message(
+    F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}),
+    F.text == REPLY_BTN_MENU,
+)
+async def menu_button(message: Message) -> None:
+    await handle_menu_request(message)

@@ -20,6 +20,7 @@ from keyboards.inline import (
     start_info_inline_keyboard,
 )
 from keyboards.menu import open_bot_private_keyboard
+from keyboards.reply import group_menu_keyboard
 from services.invite_tracker import parse_start_referral_payload
 from utils.messaging import notice_callback_expired
 from utils.start_sections import (
@@ -57,6 +58,10 @@ async def cmd_start_group(message: Message) -> None:
     await message.answer(
         "🔒 Bot ашиглахын тулд эхлээд private chat дээр /start дарна уу 🔒",
         reply_markup=open_bot_private_keyboard(),
+    )
+    await message.answer(
+        "📋 Menu товчоор group дотор /menu-тэй ижил ажиллуулж болно.",
+        reply_markup=group_menu_keyboard(),
     )
 
 

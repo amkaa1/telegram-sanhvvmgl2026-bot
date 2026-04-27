@@ -6,7 +6,7 @@ from aiogram.types import User as TgUser
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.queries import (
-    RATING_DAILY_LIMIT,
+    RATING_LIMIT_COUNT,
     add_rating,
     count_recent_ratings,
     create_rating_undo_token,
@@ -14,6 +14,7 @@ from database.queries import (
     get_rating_cooldown_remaining,
 )
 from database.models import User
+from utils.logger import logger
 
 
 TRUST_LEVELS = [
@@ -89,7 +90,7 @@ async def ensure_user(
 class RatingResult:
     ok: bool
     group_line: str
-    dm_line: str | None
+    dm_line: str | None = None
     undo_token: str | None = None
 
 
@@ -97,10 +98,23 @@ async def rate_user(
     session: AsyncSession,
     from_tg: TgUser,
     to_tg: TgUser,
-    positive: bool,
     *,
+    positive: bool,
     source_message: Message | None = None,
 ) -> RatingResult:
+    action = "good" if positive else "bad"
+    actor_id = from_tg.id
+    target_id = to_tg.id
+    callback_data = (
+        f"menu:{action}:{target_id}" if source_message is not None else f"direct:{action}:{target_id}"
+    )
+    logger.info(
+        "rating_service_start actor_id=%s target_user_id=%s action=%s callback_data=%s",
+        actor_id,
+        target_id,
+        action,
+        callback_data,
+    )
     from_user = await ensure_user(session, from_tg)
     to_user = await ensure_user(session, to_tg)
     label = get_user_display_label(to_tg)
@@ -110,38 +124,61 @@ async def rate_user(
         return RatingResult(
             ok=False,
             group_line="⚠️ Өөрийгөө үнэлэх боломжгүй ⚠️",
-            dm_line=None,
         )
-
-    recent_count = await count_recent_ratings(session, actor_user_id=from_user.id, hours=24)
-    if recent_count >= RATING_DAILY_LIMIT:
-        remaining = await get_rating_cooldown_remaining(session, actor_user_id=from_user.id)
-        remaining_text = format_remaining_time(
-            int(remaining.total_seconds()) if remaining else 0
-        )
+    if to_user.is_bot:
         return RatingResult(
             ok=False,
-            group_line=(
-                "⏳ Та өнөөдрийн rating limit-дээ хүрсэн байна ⏳\n"
-                f"Дахин үнэлгээ өгөх боломж: {remaining_text}"
-            ),
-            dm_line=None,
+            group_line="⚠️ Энэ хэрэглэгч дээр үйлдэл хийх боломжгүй.",
+        )
+
+    recent_count = await count_recent_ratings(session, actor_user_id=from_user.id)
+    if recent_count >= RATING_LIMIT_COUNT:
+        await get_rating_cooldown_remaining(session, actor_user_id=from_user.id)
+        return RatingResult(
+            ok=False,
+            group_line="⚠️ Та 72 цагийн дотор нийт 2 үнэлгээ өгөх боломжтой. Дараа дахин оролдоно уу.",
         )
 
     source_chat_type = source_message.chat.type if source_message and source_message.chat else None
     source_chat_id = source_message.chat.id if source_message and source_message.chat else None
     source_message_id = source_message.message_id if source_message else None
-    rating = await add_rating(
-        session,
-        from_user,
-        to_user,
-        positive,
-        source_chat_type=source_chat_type,
-        source_chat_id=source_chat_id,
-        source_message_id=source_message_id,
+    logger.info(
+        "rating_service_db_operation_start actor_id=%s target_user_id=%s action=%s callback_data=%s",
+        actor_id,
+        target_id,
+        action,
+        callback_data,
     )
+    try:
+        rating = await add_rating(
+            session,
+            from_user,
+            to_user,
+            positive,
+            source_chat_type=source_chat_type,
+            source_chat_id=source_chat_id,
+            source_message_id=source_message_id,
+        )
+    except Exception:
+        logger.exception(
+            "rating_service_db_operation_failed actor_id=%s target_user_id=%s action=%s callback_data=%s",
+            actor_id,
+            target_id,
+            action,
+            callback_data,
+        )
+        raise
     if rating is None:
-        return RatingResult(ok=False, group_line="Системийн алдаа гарлаа.", dm_line=None)
+        logger.warning(
+            "rating_service_duplicate_or_invalid actor_id=%s target_user_id=%s action=%s",
+            actor_id,
+            target_id,
+            action,
+        )
+        return RatingResult(
+            ok=False,
+            group_line="⚠️ Та түр хүлээгээд дахин оролдоно уу.",
+        )
     if to_user.manual_badge_override:
         to_user.verified = True
     else:
@@ -152,8 +189,19 @@ async def rate_user(
         actor_telegram_id=from_tg.id,
     )
     await session.commit()
+    logger.info(
+        "rating_service_db_operation_success actor_id=%s target_user_id=%s action=%s rating_id=%s",
+        actor_id,
+        target_id,
+        action,
+        rating.id,
+    )
 
-    group_line = f"✅ {label}-д {rate_word} үнэлгээг бүртгэлээ ✅"
+    group_line = (
+        f"✅ Good нэмэгдлээ: {label}"
+        if positive
+        else f"⚠️ Bad нэмэгдлээ: {label}"
+    )
     dm_line = f"✅ Та {label}-д {rate_word} үнэлгээ өглөө ✅"
     return RatingResult(ok=True, group_line=group_line, dm_line=dm_line, undo_token=undo.token)
 

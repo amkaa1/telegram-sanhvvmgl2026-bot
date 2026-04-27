@@ -39,7 +39,7 @@ async def on_global_error(event: ErrorEvent) -> None:
     if upd.message:
         await upd.message.answer("Системийн алдаа гарлаа. Түр хүлээгээд дахин оролдоно уу.")
     elif upd.callback_query and upd.callback_query.message:
-        await upd.callback_query.answer("Системийн алдаа.", show_alert=True)
+        await upd.callback_query.answer("⚠️ Алдаа гарлаа. Дахин оролдоно уу.", show_alert=True)
 
 
 __all__ = ["bot", "dp"]

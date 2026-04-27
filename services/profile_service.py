@@ -26,22 +26,35 @@ def _trust_value(user: User) -> int:
     return max(0, user.reputation_positive - user.reputation_negative)
 
 
+def _trust_level_label(points: int, badge: str) -> str:
+    if badge == "Verified":
+        return "Verified"
+    if points < 10:
+        return "Шинэ гишүүн"
+    if points < 50:
+        return "Идэвхтэй гишүүн"
+    if points < 200:
+        return "Итгэлтэй гишүүн"
+    return "Verified"
+
+
 async def format_profile_text(session: AsyncSession, user: User) -> str:
     approved_reports = await get_approved_report_count(session, user.id)
     badge = resolve_badge(user)
-    trust_level = _trust_value(user)
+    trust_points = _trust_value(user)
+    trust_level = _trust_level_label(trust_points, badge)
     return "\n".join(
         [
             "━━━━━━━━━━━━━━━",
-            f"👤 Профайл: {escape(_display_name(user))}",
+            f"💀 Профайл: {escape(_display_name(user))}",
             f"🔗 Username: {escape(_username_text(user))}",
             "━━━━━━━━━━━━━━━",
-            f"🏷 Badge: {escape(badge)}",
-            f"📈 Trust оноо: {trust_level}",
+            f"✅ Trust Level: {escape(trust_level)}",
             f"👍 Good: {user.reputation_positive}",
             f"👎 Bad: {user.reputation_negative}",
+            f"📨 Invite: {user.invites_count}",
             f"⚠️ Reports: {approved_reports}",
-            f"📨 Invites: {user.invites_count}",
             "━━━━━━━━━━━━━━━",
+            "SanhvvMGL2026",
         ]
     )

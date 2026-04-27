@@ -11,6 +11,7 @@ from keyboards.report import rating_undo_keyboard
 from services.reputation import rate_user
 from services.temp_message_service import schedule_delete_message, send_temp_message
 from services.user_registry import ensure_user_registered, has_private_started
+from utils.logger import logger
 from utils.messaging import safe_send_dm
 from utils.target_user import resolve_rating_target
 
@@ -29,31 +30,23 @@ async def cmd_bad(message: Message) -> None:
 
 @router.message(
     F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}),
-    F.text.in_({REPLY_BTN_GOOD, "🔥 Good", "🔥 good"}),
+    F.text == REPLY_BTN_GOOD,
 )
 async def menu_good(message: Message) -> None:
-    await send_temp_message(
-        message,
-        "⚠️ Хуучин keyboard хүчингүй болсон. Хэрэглэгчийн мессеж дээр reply хийгээд /menu ашиглана уу ⚠️",
-        ttl_seconds=10,
-    )
+    await handle_rating(message, positive=True)
 
 
 @router.message(
     F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}),
-    F.text.in_({REPLY_BTN_BAD, "❌ Bad", "❌ bad"}),
+    F.text == REPLY_BTN_BAD,
 )
 async def menu_bad(message: Message) -> None:
-    await send_temp_message(
-        message,
-        "⚠️ Хуучин keyboard хүчингүй болсон. Хэрэглэгчийн мессеж дээр reply хийгээд /menu ашиглана уу ⚠️",
-        ttl_seconds=10,
-    )
+    await handle_rating(message, positive=False)
 
 
 @router.message(
     F.chat.type == ChatType.PRIVATE,
-    F.text.in_({REPLY_BTN_GOOD, "🔥 Good", "🔥 good"}),
+    F.text == REPLY_BTN_GOOD,
 )
 async def private_stale_menu_good(message: Message) -> None:
     await message.answer(
@@ -64,7 +57,7 @@ async def private_stale_menu_good(message: Message) -> None:
 
 @router.message(
     F.chat.type == ChatType.PRIVATE,
-    F.text.in_({REPLY_BTN_BAD, "❌ Bad", "❌ bad"}),
+    F.text == REPLY_BTN_BAD,
 )
 async def private_stale_menu_bad(message: Message) -> None:
     await message.answer(
@@ -101,6 +94,10 @@ async def _ensure_group_activation(message: Message) -> bool:
 async def handle_rating(message: Message, *, positive: bool) -> None:
     if message.from_user is None:
         return
+    from_group_button = (
+        message.chat.type in {ChatType.GROUP, ChatType.SUPERGROUP}
+        and message.text in {REPLY_BTN_GOOD, REPLY_BTN_BAD}
+    )
 
     if not await _ensure_group_activation(message):
         return
@@ -115,11 +112,18 @@ async def handle_rating(message: Message, *, positive: bool) -> None:
     if target is None:
         if message.chat.type in {ChatType.GROUP, ChatType.SUPERGROUP}:
             warning_text = (
-                "⚠️ good үнэлгээ өгөх бол тухайн хэрэглэгчийн мессеж дээр reply хийгээрэй ⚠️"
+                "⚠️ Good өгөх бол тухайн хэрэглэгчийн мессеж дээр reply хийгээд товчоо дарна уу."
                 if positive
-                else "⚠️ bad үнэлгээ өгөх бол тухайн хэрэглэгчийн мессеж дээр reply хийгээрэй ⚠️"
+                else "⚠️ Bad өгөх бол тухайн хэрэглэгчийн мессеж дээр reply хийгээд товчоо дарна уу."
             )
             await send_temp_message(message, warning_text, ttl_seconds=10)
+            if from_group_button:
+                schedule_delete_message(
+                    message.bot,
+                    chat_id=message.chat.id,
+                    message_id=message.message_id,
+                    delay_seconds=10,
+                )
         else:
             await message.answer(
                 "⚠️ Хэрэглэгч дээр reply хийгээд эсвэл /good @username, /bad @username ашиглана уу ⚠️",
@@ -149,6 +153,13 @@ async def handle_rating(message: Message, *, positive: bool) -> None:
 
     if not result.ok:
         await send_temp_message(message, result.group_line, ttl_seconds=10)
+        if from_group_button:
+            schedule_delete_message(
+                message.bot,
+                chat_id=message.chat.id,
+                message_id=message.message_id,
+                delay_seconds=10,
+            )
         return
 
     schedule_delete_message(
@@ -193,79 +204,111 @@ async def undo_rating_callback(call: CallbackQuery) -> None:
     await call.answer("⚠️ Энэ undo үйлдэл хүчингүй байна ⚠️", show_alert=True)
 
 
-@router.callback_query(F.data.regexp(r"^rate:(good|bad):\d+$"))
+@router.callback_query(F.data.regexp(r"^(rate|menu):(good|bad):\d+$"))
 async def inline_rate_callback(call: CallbackQuery) -> None:
     if call.from_user is None or call.data is None:
         return
-    parts = call.data.split(":")
-    if len(parts) != 3:
-        await call.answer("⚠️ Буруу callback формат ⚠️", show_alert=True)
-        return
-    _, action, raw_target_id = parts
-    if not raw_target_id.isdigit():
-        await call.answer("⚠️ Хэрэглэгчийн ID буруу байна ⚠️", show_alert=True)
-        return
-    target_id = int(raw_target_id)
-    if target_id <= 0:
-        await call.answer("⚠️ Хэрэглэгчийн ID буруу байна ⚠️", show_alert=True)
-        return
-    if target_id == call.from_user.id:
-        await call.answer("⚠️ Өөрийгөө үнэлэх боломжгүй ⚠️", show_alert=True)
-        return
-    if call.message is None:
-        await call.answer("⚠️ Энэ үйлдэл хүчингүй болсон байна ⚠️", show_alert=True)
-        return
+    actor_id = call.from_user.id
+    callback_data = call.data
+    try:
+        parts = callback_data.split(":")
+        if len(parts) != 3:
+            await call.answer("⚠️ Энэ үйлдэл хүчингүй байна.", show_alert=True)
+            return
+        _, action, raw_target_id = parts
+        if not raw_target_id.isdigit():
+            await call.answer("⚠️ Энэ үйлдэл хүчингүй байна.", show_alert=True)
+            return
+        target_id = int(raw_target_id)
+        if target_id <= 0:
+            await call.answer("⚠️ Энэ үйлдэл хүчингүй байна.", show_alert=True)
+            return
+        if target_id == actor_id:
+            await call.answer("⚠️ Өөртөө үнэлгээ өгөх боломжгүй.", show_alert=True)
+            return
+        if call.message is None:
+            await call.answer("⚠️ Энэ үйлдэл хүчингүй байна.", show_alert=True)
+            return
 
-    positive = action == "good"
-    async with SessionLocal() as session:
-        await ensure_user_registered(session, call.from_user)
-        target_db = await get_user_by_telegram_id(session, target_id)
-        if target_db and target_db.is_bot:
-            await session.commit()
-            await call.answer("⚠️ Bot-д энэ үйлдэл хийх боломжгүй ⚠️", show_alert=True)
-            return
-        try:
-            target_tg = await call.bot.get_chat(target_id)
-        except Exception:
-            target_tg = None
-        if target_tg is not None and getattr(target_tg, "is_bot", False):
-            await session.commit()
-            await call.answer("⚠️ Bot-д энэ үйлдэл хийх боломжгүй ⚠️", show_alert=True)
-            return
-        target_user = target_tg or (
-            call.message.reply_to_message.from_user
-            if call.message.reply_to_message and call.message.reply_to_message.from_user and call.message.reply_to_message.from_user.id == target_id
-            else None
+        positive = action == "good"
+        logger.info(
+            "menu_rating_callback_start actor_id=%s target_user_id=%s action=%s callback_data=%s",
+            actor_id,
+            target_id,
+            action,
+            callback_data,
         )
-        if target_user is None and target_db is not None:
-            target_user = TgUser(
-                id=target_db.telegram_id,
-                is_bot=target_db.is_bot,
-                first_name=target_db.first_name or "",
-                last_name=target_db.last_name,
-                username=target_db.username,
-            )
-        if target_user is None:
-            await session.commit()
-            await call.answer("⚠️ Энэ хэрэглэгчийг одоогоор таньж чадсангүй ⚠️", show_alert=True)
-            return
-        result = await rate_user(
-            session,
-            call.from_user,
-            target_user,
-            positive=positive,
-            source_message=call.message,
-        )
+        async with SessionLocal() as session:
+            try:
+                await ensure_user_registered(session, call.from_user)
+                target_db = await get_user_by_telegram_id(session, target_id)
+                target_user: TgUser | None = None
+                if target_db is not None:
+                    target_user = TgUser(
+                        id=target_db.telegram_id,
+                        is_bot=target_db.is_bot,
+                        first_name=target_db.first_name or "",
+                        last_name=target_db.last_name,
+                        username=target_db.username,
+                    )
+                if target_user is None:
+                    # callback_data already has trusted target id from menu creation;
+                    # username is optional for rating persistence.
+                    target_user = TgUser(
+                        id=target_id,
+                        is_bot=False,
+                        first_name=(target_db.first_name if target_db else "") or "Хэрэглэгч",
+                        last_name=target_db.last_name if target_db else None,
+                        username=target_db.username if target_db else None,
+                    )
+                if target_user.is_bot:
+                    await session.commit()
+                    await call.answer("⚠️ Энэ хэрэглэгч дээр үйлдэл хийх боломжгүй.", show_alert=True)
+                    return
+                logger.info(
+                    "menu_rating_db_operation_start actor_id=%s target_user_id=%s action=%s callback_data=%s",
+                    actor_id,
+                    target_id,
+                    action,
+                    callback_data,
+                )
+                result = await rate_user(
+                    session,
+                    call.from_user,
+                    target_user,
+                    positive=positive,
+                    source_message=call.message,
+                )
+                logger.info(
+                    "menu_rating_db_operation_success actor_id=%s target_user_id=%s action=%s ok=%s",
+                    actor_id,
+                    target_id,
+                    action,
+                    result.ok,
+                )
+            except Exception:
+                await session.rollback()
+                logger.exception(
+                    "menu_rating_db_operation_failed actor_id=%s target_user_id=%s action=%s callback_data=%s",
+                    actor_id,
+                    target_id,
+                    action,
+                    callback_data,
+                )
+                raise
 
-    if result.ok and call.message.chat.type in {ChatType.GROUP, ChatType.SUPERGROUP}:
-        await call.answer("✅ Үйлдэл амжилттай ✅")
-        await send_temp_message(call.message, result.group_line, ttl_seconds=10)
-        if result.dm_line:
-            await safe_send_dm(
-                call.bot,
-                telegram_user_id=call.from_user.id,
-                text=result.dm_line,
-                reply_markup=rating_undo_keyboard(result.undo_token) if result.undo_token else None,
+        if result.ok:
+            await call.answer(
+                "✅ Дэмжлэг бүртгэгдлээ."
+                if positive
+                else "⚠️ Сэрэмжлүүлэг бүртгэгдлээ."
             )
-        return
-    await call.answer(result.group_line, show_alert=not result.ok)
+            return
+        await call.answer(result.group_line, show_alert=True)
+    except Exception:
+        logger.exception(
+            "menu rating callback failed data=%s actor_id=%s",
+            callback_data,
+            actor_id,
+        )
+        await call.answer("⚠️ Алдаа гарлаа. Дахин оролдоно уу.", show_alert=True)

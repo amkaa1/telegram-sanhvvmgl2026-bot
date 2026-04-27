@@ -20,7 +20,8 @@ from .models import (
 from utils.logger import logger
 
 
-RATING_DAILY_LIMIT = 5
+RATING_LIMIT_COUNT = 2
+RATING_LIMIT_HOURS = 72
 RATING_UNDO_SECONDS = 10
 
 
@@ -86,7 +87,7 @@ async def can_rate_user(
     if from_user.id == to_user.id:
         return False
     now = dt.datetime.now(dt.timezone.utc)
-    cutoff = now - dt.timedelta(hours=24)
+    cutoff = now - dt.timedelta(hours=RATING_LIMIT_HOURS)
     stmt = select(func.count(Rating.id)).where(
         and_(
             Rating.from_user_id == from_user.id,
@@ -95,7 +96,7 @@ async def can_rate_user(
         )
     )
     res = await session.execute(stmt)
-    return int(res.scalar_one() or 0) < RATING_DAILY_LIMIT
+    return int(res.scalar_one() or 0) < RATING_LIMIT_COUNT
 
 
 async def add_rating(
@@ -126,11 +127,29 @@ async def add_rating(
         source_message_id=source_message_id,
     )
     session.add(rating)
-    if is_positive:
-        to_user.reputation_positive += 1
-    else:
-        to_user.reputation_negative += 1
-    await session.flush()
+    try:
+        if is_positive:
+            to_user.reputation_positive += 1
+        else:
+            to_user.reputation_negative += 1
+        await session.flush()
+    except IntegrityError:
+        await session.rollback()
+        logger.exception(
+            "add_rating integrity_error actor_user_id=%s target_user_id=%s action=%s",
+            from_user.id,
+            to_user.id,
+            "good" if is_positive else "bad",
+        )
+        return None
+    except Exception:
+        logger.exception(
+            "add_rating failed actor_user_id=%s target_user_id=%s action=%s",
+            from_user.id,
+            to_user.id,
+            "good" if is_positive else "bad",
+        )
+        raise
     return rating
 
 
@@ -381,7 +400,7 @@ async def mark_bot_private_started(session: AsyncSession, user: User) -> None:
 
 
 async def count_recent_ratings(
-    session: AsyncSession, *, actor_user_id: int, hours: int = 24
+    session: AsyncSession, *, actor_user_id: int, hours: int = RATING_LIMIT_HOURS
 ) -> int:
     cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=hours)
     stmt = select(func.count(Rating.id)).where(
@@ -397,7 +416,7 @@ async def count_recent_ratings(
 async def get_rating_cooldown_remaining(
     session: AsyncSession, *, actor_user_id: int
 ) -> dt.timedelta | None:
-    cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=24)
+    cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=RATING_LIMIT_HOURS)
     stmt = (
         select(Rating.created_at)
         .where(
@@ -410,9 +429,9 @@ async def get_rating_cooldown_remaining(
         .order_by(Rating.created_at.asc())
     )
     rows = (await session.execute(stmt)).scalars().all()
-    if len(rows) < RATING_DAILY_LIMIT:
+    if len(rows) < RATING_LIMIT_COUNT:
         return None
-    unlock_at = rows[0] + dt.timedelta(hours=24)
+    unlock_at = rows[0] + dt.timedelta(hours=RATING_LIMIT_HOURS)
     remaining = unlock_at - dt.datetime.now(dt.timezone.utc)
     if remaining.total_seconds() <= 0:
         return None

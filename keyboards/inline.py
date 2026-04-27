@@ -71,21 +71,21 @@ def group_target_menu_keyboard(target_user_id: int) -> InlineKeyboardMarkup:
             [
                 InlineKeyboardButton(
                     text="👍 good",
-                    callback_data=f"rate:good:{target_user_id}",
+                    callback_data=f"menu:good:{target_user_id}",
                 ),
                 InlineKeyboardButton(
                     text="👎 bad",
-                    callback_data=f"rate:bad:{target_user_id}",
+                    callback_data=f"menu:bad:{target_user_id}",
                 ),
             ],
             [
                 InlineKeyboardButton(
                     text="👤 Profile",
-                    callback_data=f"profile:view:{target_user_id}",
+                    callback_data=f"menu:profile:{target_user_id}",
                 ),
                 InlineKeyboardButton(
                     text="🚨 Report",
-                    callback_data=f"report:start:{target_user_id}",
+                    callback_data=f"menu:report:{target_user_id}",
                 ),
             ],
         ]
