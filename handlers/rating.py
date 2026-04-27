@@ -221,7 +221,7 @@ async def inline_rate_callback(call: CallbackQuery) -> None:
             return
         target_id = int(raw_target_id)
         if target_id <= 0:
-            await call.answer("⚠️ Энэ үйлдэл хүчингүй байна.", show_alert=True)
+            await call.answer("⚠️ Эхлээд тухайн хүний пост дээр reply хийж /menu дарна уу.", show_alert=True)
             return
         if target_id == actor_id:
             await call.answer("⚠️ Өөртөө үнэлгээ өгөх боломжгүй.", show_alert=True)
@@ -312,3 +312,4 @@ async def inline_rate_callback(call: CallbackQuery) -> None:
             actor_id,
         )
         await call.answer("⚠️ Алдаа гарлаа. Дахин оролдоно уу.", show_alert=True)
+

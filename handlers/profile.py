@@ -171,13 +171,14 @@ async def inline_profile_callback(call: CallbackQuery) -> None:
             await call.answer("⚠️ Энэ үйлдэл хүчингүй байна.", show_alert=True)
             return
         target_id = int(raw_target_id)
-        if target_id <= 0:
+        if target_id < 0:
             await call.answer("⚠️ Энэ үйлдэл хүчингүй байна.", show_alert=True)
             return
 
         async with SessionLocal() as session:
             await ensure_user_registered(session, call.from_user)
-            target_db = await get_user_by_telegram_id(session, target_id)
+            resolved_target_id = call.from_user.id if target_id == 0 else target_id
+            target_db = await get_user_by_telegram_id(session, resolved_target_id)
             if target_db and target_db.is_bot:
                 await session.commit()
                 await call.answer("⚠️ Энэ хэрэглэгч дээр үйлдэл хийх боломжгүй.", show_alert=True)
@@ -186,7 +187,7 @@ async def inline_profile_callback(call: CallbackQuery) -> None:
             target_user = target_db
             if target_user is None and call.message.chat.type in {ChatType.GROUP, ChatType.SUPERGROUP}:
                 try:
-                    member = await call.bot.get_chat_member(call.message.chat.id, target_id)
+                    member = await call.bot.get_chat_member(call.message.chat.id, resolved_target_id)
                     target_user = await get_or_create_user(
                         session,
                         telegram_id=member.user.id,
@@ -209,7 +210,7 @@ async def inline_profile_callback(call: CallbackQuery) -> None:
             call.bot,
             chat_id=sent_msg.chat.id,
             message_id=sent_msg.message_id,
-            delay_seconds=25,
+            delay_seconds=5 if target_id == 0 else 30,
         )
     except Exception:
         logger.exception("menu profile callback failed data=%s actor_id=%s", call.data, call.from_user.id)
