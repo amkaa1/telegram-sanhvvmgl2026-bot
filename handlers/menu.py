@@ -34,7 +34,7 @@ async def cmd_menu(message: Message) -> None:
         target = message.reply_to_message.from_user if message.reply_to_message else None
         if target is None:
             sent = await message.reply(
-                "⚠️ /menu ашиглахдаа тухайн хэрэглэгчийн мессеж дээр reply хийгээд ажиллуулна уу ⚠️"
+                "⚠️ /menu ашиглахдаа тухайн хэрэглэгчийн мессеж дээр reply хийгээд ашиглана уу."
             )
             schedule_delete_message(
                 message.bot,

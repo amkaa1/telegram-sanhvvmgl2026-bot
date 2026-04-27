@@ -26,6 +26,7 @@ from keyboards.report import (
 )
 from services.temp_message_service import send_temp_message
 from services.user_registry import ensure_user_registered, has_private_started
+from utils.logger import logger
 from utils.messaging import safe_send_dm
 
 
@@ -193,46 +194,52 @@ async def private_stale_menu_report(message: Message) -> None:
     )
 
 
-@router.callback_query(F.data.regexp(r"^report:start:\d+$"))
+@router.callback_query(F.data.regexp(r"^(report:start|menu:report):\d+$"))
 async def inline_report_start_callback(call: CallbackQuery, state: FSMContext) -> None:
     if call.from_user is None or call.data is None or call.message is None:
         return
-    parts = call.data.split(":")
-    if len(parts) != 3 or not parts[2].isdigit():
-        await call.answer("⚠️ Буруу callback формат ⚠️", show_alert=True)
-        return
-    target_id = int(parts[2])
-    if target_id <= 0:
-        await call.answer("⚠️ Хэрэглэгчийн ID буруу байна ⚠️", show_alert=True)
-        return
-    if target_id == call.from_user.id:
-        await call.answer("⚠️ Өөрийгөө report хийх боломжгүй ⚠️", show_alert=True)
-        return
     try:
-        target_chat = await call.bot.get_chat(target_id)
-    except Exception:
-        target_chat = None
-    if target_chat is None:
-        await call.answer("⚠️ Энэ хэрэглэгчийг одоогоор таньж чадсангүй ⚠️", show_alert=True)
-        return
-    if getattr(target_chat, "is_bot", False):
-        await call.answer("⚠️ Bot хэрэглэгч дээр report үүсгэх боломжгүй ⚠️", show_alert=True)
-        return
-    target = TgUser(
-        id=int(target_chat.id),
-        is_bot=False,
-        first_name=getattr(target_chat, "first_name", "") or "",
-        last_name=getattr(target_chat, "last_name", None),
-        username=getattr(target_chat, "username", None),
-    )
-    await _start_report_dm(call.message, state=state, target=target)
-    if call.message.chat.type in {ChatType.GROUP, ChatType.SUPERGROUP}:
-        await send_temp_message(
-            call.message,
-            "⚠️ Report үргэлжлүүлэх зааврыг DM рүү илгээлээ ⚠️",
-            ttl_seconds=10,
+        parts = call.data.split(":")
+        if len(parts) == 3 and parts[0] == "menu":
+            raw_target_id = parts[2]
+        elif len(parts) == 3 and parts[0] == "report":
+            raw_target_id = parts[2]
+        else:
+            await call.answer("⚠️ Энэ үйлдэл хүчингүй байна.", show_alert=True)
+            return
+        if not raw_target_id.isdigit():
+            await call.answer("⚠️ Энэ үйлдэл хүчингүй байна.", show_alert=True)
+            return
+        target_id = int(raw_target_id)
+        if target_id <= 0:
+            await call.answer("⚠️ Энэ үйлдэл хүчингүй байна.", show_alert=True)
+            return
+        if target_id == call.from_user.id:
+            await call.answer("⚠️ Энэ хэрэглэгч дээр үйлдэл хийх боломжгүй.", show_alert=True)
+            return
+        if call.message.chat.type not in {ChatType.GROUP, ChatType.SUPERGROUP}:
+            await call.answer("⚠️ Энэ үйлдэл хүчингүй байна.", show_alert=True)
+            return
+        try:
+            member = await call.bot.get_chat_member(call.message.chat.id, target_id)
+            target_user = member.user
+        except Exception:
+            target_user = None
+        if target_user is None or target_user.is_bot:
+            await call.answer("⚠️ Энэ хэрэглэгч дээр үйлдэл хийх боломжгүй.", show_alert=True)
+            return
+        target = TgUser(
+            id=target_user.id,
+            is_bot=target_user.is_bot,
+            first_name=target_user.first_name,
+            last_name=target_user.last_name,
+            username=target_user.username,
         )
-    await call.answer("✅ DM руу илгээлээ ✅")
+        await _start_report_dm(call.message, state=state, target=target)
+        await call.answer("✅ Report DM рүү илгээлээ.")
+    except Exception:
+        logger.exception("menu report callback failed data=%s actor_id=%s", call.data, call.from_user.id)
+        await call.answer("⚠️ Алдаа гарлаа. Дахин оролдоно уу.", show_alert=True)
 
 
 @router.callback_query(F.data.startswith("report_reason:"))

@@ -11,6 +11,7 @@ from keyboards.report import rating_undo_keyboard
 from services.reputation import rate_user
 from services.temp_message_service import schedule_delete_message, send_temp_message
 from services.user_registry import ensure_user_registered, has_private_started
+from utils.logger import logger
 from utils.messaging import safe_send_dm
 from utils.target_user import resolve_rating_target
 
@@ -193,79 +194,69 @@ async def undo_rating_callback(call: CallbackQuery) -> None:
     await call.answer("⚠️ Энэ undo үйлдэл хүчингүй байна ⚠️", show_alert=True)
 
 
-@router.callback_query(F.data.regexp(r"^rate:(good|bad):\d+$"))
+@router.callback_query(F.data.regexp(r"^(rate|menu):(good|bad):\d+$"))
 async def inline_rate_callback(call: CallbackQuery) -> None:
     if call.from_user is None or call.data is None:
         return
-    parts = call.data.split(":")
-    if len(parts) != 3:
-        await call.answer("⚠️ Буруу callback формат ⚠️", show_alert=True)
-        return
-    _, action, raw_target_id = parts
-    if not raw_target_id.isdigit():
-        await call.answer("⚠️ Хэрэглэгчийн ID буруу байна ⚠️", show_alert=True)
-        return
-    target_id = int(raw_target_id)
-    if target_id <= 0:
-        await call.answer("⚠️ Хэрэглэгчийн ID буруу байна ⚠️", show_alert=True)
-        return
-    if target_id == call.from_user.id:
-        await call.answer("⚠️ Өөрийгөө үнэлэх боломжгүй ⚠️", show_alert=True)
-        return
-    if call.message is None:
-        await call.answer("⚠️ Энэ үйлдэл хүчингүй болсон байна ⚠️", show_alert=True)
-        return
+    try:
+        parts = call.data.split(":")
+        if len(parts) != 3:
+            await call.answer("⚠️ Энэ үйлдэл хүчингүй байна.", show_alert=True)
+            return
+        _, action, raw_target_id = parts
+        if not raw_target_id.isdigit():
+            await call.answer("⚠️ Энэ үйлдэл хүчингүй байна.", show_alert=True)
+            return
+        target_id = int(raw_target_id)
+        if target_id <= 0:
+            await call.answer("⚠️ Энэ үйлдэл хүчингүй байна.", show_alert=True)
+            return
+        if target_id == call.from_user.id:
+            await call.answer("⚠️ Өөртөө үнэлгээ өгөх боломжгүй.", show_alert=True)
+            return
+        if call.message is None:
+            await call.answer("⚠️ Энэ үйлдэл хүчингүй байна.", show_alert=True)
+            return
 
-    positive = action == "good"
-    async with SessionLocal() as session:
-        await ensure_user_registered(session, call.from_user)
-        target_db = await get_user_by_telegram_id(session, target_id)
-        if target_db and target_db.is_bot:
-            await session.commit()
-            await call.answer("⚠️ Bot-д энэ үйлдэл хийх боломжгүй ⚠️", show_alert=True)
-            return
-        try:
-            target_tg = await call.bot.get_chat(target_id)
-        except Exception:
-            target_tg = None
-        if target_tg is not None and getattr(target_tg, "is_bot", False):
-            await session.commit()
-            await call.answer("⚠️ Bot-д энэ үйлдэл хийх боломжгүй ⚠️", show_alert=True)
-            return
-        target_user = target_tg or (
-            call.message.reply_to_message.from_user
-            if call.message.reply_to_message and call.message.reply_to_message.from_user and call.message.reply_to_message.from_user.id == target_id
-            else None
-        )
-        if target_user is None and target_db is not None:
-            target_user = TgUser(
-                id=target_db.telegram_id,
-                is_bot=target_db.is_bot,
-                first_name=target_db.first_name or "",
-                last_name=target_db.last_name,
-                username=target_db.username,
+        positive = action == "good"
+        async with SessionLocal() as session:
+            await ensure_user_registered(session, call.from_user)
+            target_db = await get_user_by_telegram_id(session, target_id)
+            target_user: TgUser | None = None
+            if target_db is not None:
+                target_user = TgUser(
+                    id=target_db.telegram_id,
+                    is_bot=target_db.is_bot,
+                    first_name=target_db.first_name or "",
+                    last_name=target_db.last_name,
+                    username=target_db.username,
+                )
+            if target_user is None and call.message.chat.type in {ChatType.GROUP, ChatType.SUPERGROUP}:
+                try:
+                    member = await call.bot.get_chat_member(call.message.chat.id, target_id)
+                    target_user = member.user
+                except Exception:
+                    target_user = None
+            if target_user is None:
+                await session.commit()
+                await call.answer("⚠️ Энэ хэрэглэгч дээр үйлдэл хийх боломжгүй.", show_alert=True)
+                return
+            if target_user.is_bot:
+                await session.commit()
+                await call.answer("⚠️ Энэ хэрэглэгч дээр үйлдэл хийх боломжгүй.", show_alert=True)
+                return
+            result = await rate_user(
+                session,
+                call.from_user,
+                target_user,
+                positive=positive,
+                source_message=call.message,
             )
-        if target_user is None:
-            await session.commit()
-            await call.answer("⚠️ Энэ хэрэглэгчийг одоогоор таньж чадсангүй ⚠️", show_alert=True)
-            return
-        result = await rate_user(
-            session,
-            call.from_user,
-            target_user,
-            positive=positive,
-            source_message=call.message,
-        )
 
-    if result.ok and call.message.chat.type in {ChatType.GROUP, ChatType.SUPERGROUP}:
-        await call.answer("✅ Үйлдэл амжилттай ✅")
-        await send_temp_message(call.message, result.group_line, ttl_seconds=10)
-        if result.dm_line:
-            await safe_send_dm(
-                call.bot,
-                telegram_user_id=call.from_user.id,
-                text=result.dm_line,
-                reply_markup=rating_undo_keyboard(result.undo_token) if result.undo_token else None,
-            )
-        return
-    await call.answer(result.group_line, show_alert=not result.ok)
+        if result.ok:
+            await call.answer("✅ Дэмжлэг бүртгэгдлээ." if positive else "✅ Сэрэмжлүүлэг бүртгэгдлээ.")
+            return
+        await call.answer(result.group_line, show_alert=True)
+    except Exception:
+        logger.exception("menu rating callback failed data=%s actor_id=%s", call.data, call.from_user.id)
+        await call.answer("⚠️ Алдаа гарлаа. Дахин оролдоно уу.", show_alert=True)
