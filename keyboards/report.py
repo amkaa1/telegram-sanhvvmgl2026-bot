@@ -1,14 +1,19 @@
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 
-def report_reason_keyboard() -> InlineKeyboardMarkup:
+def report_reason_keyboard(target_user_id: int | None = None) -> InlineKeyboardMarkup:
+    prefix = (
+        f"report:reason:{target_user_id}:"
+        if target_user_id is not None
+        else "report_reason:"
+    )
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="Scam", callback_data="report_reason:Scam")],
-            [InlineKeyboardButton(text="Spam", callback_data="report_reason:Spam")],
-            [InlineKeyboardButton(text="Fake", callback_data="report_reason:Fake")],
-            [InlineKeyboardButton(text="Abuse", callback_data="report_reason:Abuse")],
-            [InlineKeyboardButton(text="Other", callback_data="report_reason:Other")],
+            [InlineKeyboardButton(text="Scam", callback_data=f"{prefix}scam")],
+            [InlineKeyboardButton(text="Spam", callback_data=f"{prefix}spam")],
+            [InlineKeyboardButton(text="Fake", callback_data=f"{prefix}fake")],
+            [InlineKeyboardButton(text="Abuse", callback_data=f"{prefix}abuse")],
+            [InlineKeyboardButton(text="Other", callback_data=f"{prefix}other")],
         ]
     )
 

@@ -1,79 +1,11 @@
 import asyncio
 
-from sqlalchemy import text
-
 from config import settings
 from database.db import engine
+from database.migrations import run_safe_migrations
 from database.models import Base
 from loader import bot, dp
 from utils.logger import logger, setup_logging
-
-
-async def _ensure_referral_columns(conn) -> None:
-    await conn.execute(
-        text(
-            "ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_join_counted BOOLEAN DEFAULT FALSE"
-        )
-    )
-    await conn.execute(
-        text(
-            "ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_counted_at TIMESTAMP WITH TIME ZONE"
-        )
-    )
-    await conn.execute(
-        text(
-            "ALTER TABLE users ADD COLUMN IF NOT EXISTS bot_private_started BOOLEAN DEFAULT FALSE"
-        )
-    )
-    await conn.execute(
-        text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_bot BOOLEAN DEFAULT FALSE")
-    )
-    await conn.execute(
-        text(
-            "ALTER TABLE users ADD COLUMN IF NOT EXISTS first_seen_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()"
-        )
-    )
-    await conn.execute(
-        text(
-            "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()"
-        )
-    )
-    await conn.execute(
-        text("ALTER TABLE users ADD COLUMN IF NOT EXISTS manual_badge_override VARCHAR(64)")
-    )
-    await conn.execute(
-        text("ALTER TABLE ratings ADD COLUMN IF NOT EXISTS rating_type VARCHAR(8) DEFAULT 'good'")
-    )
-    await conn.execute(
-        text("ALTER TABLE ratings ADD COLUMN IF NOT EXISTS undone_at TIMESTAMP WITH TIME ZONE")
-    )
-    await conn.execute(
-        text("ALTER TABLE ratings ADD COLUMN IF NOT EXISTS source_chat_type VARCHAR(16)")
-    )
-    await conn.execute(
-        text("ALTER TABLE ratings ADD COLUMN IF NOT EXISTS source_chat_id BIGINT")
-    )
-    await conn.execute(
-        text("ALTER TABLE ratings ADD COLUMN IF NOT EXISTS source_message_id BIGINT")
-    )
-    await conn.execute(
-        text("ALTER TABLE reports ADD COLUMN IF NOT EXISTS status VARCHAR(16) DEFAULT 'pending'")
-    )
-    await conn.execute(
-        text("ALTER TABLE reports ADD COLUMN IF NOT EXISTS evidence_text VARCHAR(2048)")
-    )
-    await conn.execute(
-        text("ALTER TABLE reports ADD COLUMN IF NOT EXISTS evidence_file_id VARCHAR(255)")
-    )
-    await conn.execute(
-        text("ALTER TABLE reports ADD COLUMN IF NOT EXISTS evidence_type VARCHAR(32)")
-    )
-    await conn.execute(
-        text("ALTER TABLE reports ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMP WITH TIME ZONE")
-    )
-    await conn.execute(
-        text("ALTER TABLE reports ADD COLUMN IF NOT EXISTS reviewed_by_admin_id BIGINT")
-    )
 
 
 async def main() -> None:
@@ -86,7 +18,7 @@ async def main() -> None:
     try:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
-            await _ensure_referral_columns(conn)
+            await run_safe_migrations(conn)
     except Exception as exc:
         logger.exception("DB эхлүүлэх үед алдаа гарлаа: %s", exc)
         print("Өгөгдлийн сан руу холбогдож чадсангүй. DATABASE_URL болон сүлжээний тохиргоогоо шалгана уу.")
